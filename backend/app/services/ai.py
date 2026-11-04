@@ -1,0 +1,156 @@
+"""Claude-powered features: word tutor, usage grading, mnemonics.
+
+Every prompt is grounded in the word's verified data from the database so the
+model explains *our* answer key instead of inventing its own.
+"""
+import json
+import logging
+
+import anthropic
+from fastapi import HTTPException, status
+
+from app.config import get_settings
+from app.models import Word
+
+log = logging.getLogger(__name__)
+
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
+TUTOR_SYSTEM = """You are a friendly, precise GRE vocabulary tutor.
+You are helping the student with one word; its verified entry is given below.
+Treat the entry as the source of truth for meaning and usage.
+Keep answers short (under 120 words unless asked for more), concrete, and
+focused on what the GRE tests: precise meaning, nuance, and telling the word
+apart from look-alikes and near-synonyms. Use plain text, no markdown headings."""
+
+USAGE_SYSTEM = """You grade whether a student used a GRE vocabulary word correctly
+in a sentence they wrote. Judge meaning and nuance, not style. A sentence is
+correct only if the word is used with its proper meaning and part of speech and
+the context makes that meaning plausible. Minor typos elsewhere do not matter.
+Feedback must be one or two sentences addressed to the student."""
+
+USAGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "correct": {"type": "boolean"},
+        "score": {"type": "number", "description": "0.0 to 1.0"},
+        "feedback": {"type": "string"},
+        "improved_sentence": {"type": "string"},
+    },
+    "required": ["correct", "score", "feedback", "improved_sentence"],
+    "additionalProperties": False,
+}
+
+MNEMONIC_SYSTEM = """You write memorable, accurate mnemonics for GRE words.
+Return one mnemonic of at most two sentences: a sound-alike or vivid image that
+links the word's sound to its meaning. No preamble."""
+
+
+def word_entry(word: Word) -> str:
+    return json.dumps(
+        {
+            "word": word.lemma,
+            "part_of_speech": word.pos,
+            "definition": word.definition,
+            "nuance": word.nuance,
+            "examples": word.examples,
+            "synonyms": word.synonyms,
+            "antonyms": word.antonyms,
+            "often_confused_with": word.confusables,
+        },
+        indent=2,
+    )
+
+
+class AIUnavailable(HTTPException):
+    def __init__(self, detail: str, code: int = status.HTTP_503_SERVICE_UNAVAILABLE):
+        super().__init__(code, detail)
+
+
+class ClaudeService:
+    def __init__(self) -> None:
+        self.settings = get_settings()
+        self._client: anthropic.AsyncAnthropic | None = None
+
+    @property
+    def enabled(self) -> bool:
+        return self.settings.ai_enabled
+
+    @property
+    def client(self) -> anthropic.AsyncAnthropic:
+        if self._client is None:
+            self._client = anthropic.AsyncAnthropic()
+        return self._client
+
+    async def _complete(
+        self,
+        system: str,
+        messages: list[dict],
+        *,
+        max_tokens: int = 2000,
+        effort: str = "low",
+        schema: dict | None = None,
+    ) -> str:
+        if not self.enabled:
+            raise AIUnavailable("AI features are disabled on this server")
+
+        output_config: dict = {"effort": effort}
+        if schema:
+            output_config["format"] = {"type": "json_schema", "schema": schema}
+        kwargs: dict = {}
+        if self.settings.claude_fallbacks:
+            kwargs = {"betas": [FALLBACK_BETA], "fallbacks": "default"}
+
+        try:
+            response = await self.client.beta.messages.create(
+                model=self.settings.claude_model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+                output_config=output_config,
+                **kwargs,
+            )
+        except anthropic.AuthenticationError as exc:
+            raise AIUnavailable("Claude API credentials are missing or invalid") from exc
+        except anthropic.RateLimitError as exc:
+            raise AIUnavailable("AI is busy, try again shortly", status.HTTP_429_TOO_MANY_REQUESTS) from exc
+        except anthropic.BadRequestError as exc:
+            log.error("Claude rejected request: %s", exc.message)
+            raise AIUnavailable("AI request was rejected", status.HTTP_502_BAD_GATEWAY) from exc
+        except anthropic.APIStatusError as exc:
+            log.error("Claude API error %s (request %s)", exc.status_code, exc.request_id)
+            raise AIUnavailable("AI service error, try again") from exc
+        except anthropic.APIConnectionError as exc:
+            raise AIUnavailable("Could not reach the AI service") from exc
+
+        if response.stop_reason == "refusal":
+            raise AIUnavailable("The AI declined this request", status.HTTP_422_UNPROCESSABLE_ENTITY)
+        return "".join(b.text for b in response.content if b.type == "text").strip()
+
+    async def tutor(self, word: Word, history: list[dict]) -> str:
+        system = f"{TUTOR_SYSTEM}\n\n<word_entry>\n{word_entry(word)}\n</word_entry>"
+        return await self._complete(system, history[-20:], max_tokens=2000)
+
+    async def check_usage(self, word: Word, sentence: str) -> dict:
+        prompt = (
+            f"<word_entry>\n{word_entry(word)}\n</word_entry>\n\n"
+            f"<student_sentence>\n{sentence}\n</student_sentence>\n\n"
+            f"Did the student use \"{word.lemma}\" correctly?"
+        )
+        text = await self._complete(
+            USAGE_SYSTEM,
+            [{"role": "user", "content": prompt}],
+            max_tokens=2000,
+            effort="medium",
+            schema=USAGE_SCHEMA,
+        )
+        result = json.loads(text)
+        result["score"] = max(0.0, min(1.0, float(result.get("score", 0.0))))
+        return result
+
+    async def mnemonic(self, word: Word) -> str:
+        prompt = f"<word_entry>\n{word_entry(word)}\n</word_entry>\n\nWrite a mnemonic for \"{word.lemma}\"."
+        return await self._complete(MNEMONIC_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=1000)
+
+
+claude = ClaudeService()

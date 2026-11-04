@@ -1,0 +1,206 @@
+"""Database schema. Portable between SQLite (dev) and Postgres (Supabase).
+
+User ids are opaque strings (Clerk user ids), so there are no foreign keys to
+an auth table.
+"""
+from datetime import date, datetime, timezone
+
+from sqlalchemy import JSON as _JSON
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db import Base
+
+# JSONB on Postgres (Supabase), plain JSON elsewhere (SQLite in dev and tests).
+JSON = _JSON().with_variant(JSONB(), "postgresql")
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Profile(Base):
+    __tablename__ = "profiles"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    test_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    target_verbal: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_quant: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    daily_new_words: Mapped[int] = mapped_column(Integer, default=10)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Skill(Base):
+    """Skill taxonomy tree shared by every section (verbal.vocab.*, quant.*, writing.*)."""
+
+    __tablename__ = "skills"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    section: Mapped[str] = mapped_column(String(16))
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("skills.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(128))
+
+
+class Word(Base):
+    __tablename__ = "words"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lemma: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    pos: Mapped[str] = mapped_column(String(16))
+    # Stress-marked respelling, e.g. "luh-KAH-nik"; variants joined by " or ".
+    pronunciation: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    definition: Mapped[str] = mapped_column(Text)
+    nuance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    examples: Mapped[list] = mapped_column(JSON, default=list)
+    synonyms: Mapped[list] = mapped_column(JSON, default=list)
+    antonyms: Mapped[list] = mapped_column(JSON, default=list)
+    confusables: Mapped[list] = mapped_column(JSON, default=list)
+    cluster: Mapped[str] = mapped_column(String(64), index=True)
+    skill_id: Mapped[str] = mapped_column(ForeignKey("skills.id"))
+    tier: Mapped[int] = mapped_column(Integer, default=1)  # 1 = most common on the GRE
+    global_difficulty: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class Item(Base):
+    """A stored question (Text Completion, Sentence Equivalence; later Quant)."""
+
+    __tablename__ = "items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    section: Mapped[str] = mapped_column(String(16))
+    item_type: Mapped[str] = mapped_column(String(32), index=True)
+    skill_id: Mapped[str] = mapped_column(ForeignKey("skills.id"))
+    difficulty_label: Mapped[str] = mapped_column(String(16))  # easy / medium / hard
+    difficulty_prior: Mapped[float] = mapped_column(Float, default=0.0)
+    difficulty_offset: Mapped[float] = mapped_column(Float, default=0.0)  # learned from answers
+    content: Mapped[dict] = mapped_column(JSON)  # authored content; see app/seed/verbal
+    status: Mapped[str] = mapped_column(String(16), default="active")
+
+    @property
+    def difficulty(self) -> float:
+        return self.difficulty_prior + (self.difficulty_offset or 0.0)
+
+
+class UserSkill(Base):
+    """A user's rating on one skill (same scale as item difficulty)."""
+
+    __tablename__ = "user_skills"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    skill_id: Mapped[str] = mapped_column(ForeignKey("skills.id"), primary_key=True)
+    rating: Mapped[float] = mapped_column(Float, default=0.0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    correct: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Card(Base):
+    """Per-user, per-word memory + comfort state (mirrors vocab_engine.WordCard)."""
+
+    __tablename__ = "cards"
+    __table_args__ = (Index("ix_cards_user_due", "user_id", "due"),)
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), primary_key=True)
+
+    state: Mapped[int] = mapped_column(Integer, default=0)
+    step: Mapped[int] = mapped_column(Integer, default=0)
+    stability: Mapped[float] = mapped_column(Float, default=0.0)
+    difficulty: Mapped[float] = mapped_column(Float, default=0.0)
+    due: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_review: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reps: Mapped[int] = mapped_column(Integer, default=0)
+    lapses: Mapped[int] = mapped_column(Integer, default=0)
+
+    depth: Mapped[int] = mapped_column(Integer, default=0)
+    streak: Mapped[int] = mapped_column(Integer, default=0)
+    last_streak_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    calibration: Mapped[float] = mapped_column(Float, default=0.5)
+    last_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # How the card started: "study" (new word), "placement" (answered right in
+    # the placement check) or "fast_track" (predicted known from vocab level).
+    # Only "study" cards count toward the daily new-word limit. NULL = "study".
+    origin: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class IssuedItem(Base):
+    """A question served to a user. The answer key never leaves the server."""
+
+    __tablename__ = "issued_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    section: Mapped[str] = mapped_column(String(16))
+    item_type: Mapped[str] = mapped_column(String(32))
+    word_id: Mapped[int | None] = mapped_column(ForeignKey("words.id"), nullable=True)
+    bank_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+    answer: Mapped[dict] = mapped_column(JSON)
+    hint_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Attempt(Base):
+    """Log of every answered item, for every section."""
+
+    __tablename__ = "attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    item_id: Mapped[str] = mapped_column(String(36))
+    section: Mapped[str] = mapped_column(String(16))
+    item_type: Mapped[str] = mapped_column(String(32))
+    word_id: Mapped[int | None] = mapped_column(ForeignKey("words.id"), nullable=True)
+    correct: Mapped[bool] = mapped_column(Boolean)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_ms: Mapped[int] = mapped_column(Integer, default=0)
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    hint_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    response: Mapped[dict] = mapped_column(JSON, default=dict)
+    comfort_before: Mapped[float | None] = mapped_column(Float, nullable=True)
+    comfort_after: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class Confusion(Base):
+    """Which wrong word a user picked when the answer was another word."""
+
+    __tablename__ = "confusions"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    target_word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), primary_key=True)
+    chosen_word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    last_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PlacementRun(Base):
+    """One adaptive placement check: the answers and the resulting ability estimate."""
+
+    __tablename__ = "placement_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    theta: Mapped[float] = mapped_column(Float, default=0.0)
+    se: Mapped[float] = mapped_column(Float, default=1.0)
+    # [{"word_id", "b", "correct", "dont_know", "ms"}, ...]
+    responses: Mapped[list] = mapped_column(JSON, default=list)
+    fast_tracked: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class UserParams(Base):
+    """Personalized model parameters learned per user."""
+
+    __tablename__ = "user_params"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    speed_baselines: Mapped[dict] = mapped_column(JSON, default=dict)
+    fsrs_weights: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    vocab_level: Mapped[float | None] = mapped_column(Float, nullable=True)
