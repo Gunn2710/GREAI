@@ -101,3 +101,47 @@ def test_users_are_isolated_by_token(client, clerk_mode):
     b = profile(client, token(sub="user_b"))
     assert a.json()["daily_new_words"] == 3
     assert b.json()["daily_new_words"] != 3
+
+
+# --- Approved accounts (GRE_ALLOWED_EMAILS) --------------------------------------
+
+@pytest.fixture
+def approved_only(clerk_mode, monkeypatch):
+    monkeypatch.setattr(get_settings(), "allowed_emails", ["Owner@Example.com"])
+
+
+def me(client, bearer):
+    return client.get("/api/me", headers={"Authorization": f"Bearer {bearer}"})
+
+
+def test_approved_email_gets_in(client, approved_only):
+    res = me(client, token(sub="user_owner", primaryEmail="owner@example.com"))  # case-insensitive
+    assert res.status_code == 200 and res.json() == {"user_id": "user_owner"}
+
+
+@pytest.mark.parametrize("claims", [
+    {"primaryEmail": "stranger@example.com"},   # signed in, but not approved
+    {},                                          # token without the email claim
+    {"primaryEmail": ""},
+])
+def test_unapproved_accounts_are_refused(client, approved_only, claims):
+    res = me(client, token(sub="user_other", **claims))
+    assert res.status_code == 403
+    assert res.json()["detail"] == "account_not_approved"
+    # ...on every endpoint, not just /api/me
+    bearer = {"Authorization": f"Bearer {token(sub='user_other', **claims)}"}
+    assert client.get("/api/stats", headers=bearer).status_code == 403
+    assert client.get("/api/study/next", headers=bearer).status_code == 403
+
+
+def test_invalid_token_is_still_401_not_403(client, approved_only):
+    assert me(client, token(key=OTHER_KEY, primaryEmail="owner@example.com")).status_code == 401
+
+
+def test_no_list_means_any_signed_in_user(client, clerk_mode):
+    assert me(client, token(sub="user_any", primaryEmail="anyone@example.com")).status_code == 200
+
+
+def test_list_is_ignored_in_dev_mode(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "allowed_emails", ["owner@example.com"])
+    assert client.get("/api/me", headers={"X-Dev-User": "dev"}).status_code == 200

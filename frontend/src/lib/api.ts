@@ -83,6 +83,7 @@ const post = <T>(path: string, body?: unknown) =>
 
 export const api = {
   config: () => request<AppConfig>('/config'),
+  me: () => request<{ user_id: string }>('/me'),
   profile: () => request<Profile>('/me/profile'),
   saveProfile: (p: Profile) => request<Profile>('/me/profile', { method: 'PUT', body: JSON.stringify(p) }),
 

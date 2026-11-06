@@ -23,6 +23,12 @@ def config():
     return {"ai_enabled": s.ai_enabled, "auth_mode": s.auth_mode, "model": s.claude_model}
 
 
+@router.get("/me")
+def me(user_id: str = Depends(current_user_id)):
+    """Who the API thinks you are. 401 if not signed in, 403 if not approved."""
+    return {"user_id": user_id}
+
+
 class ProfileIn(BaseModel):
     test_date: date | None = None
     target_verbal: int | None = Field(default=None, ge=130, le=170)
