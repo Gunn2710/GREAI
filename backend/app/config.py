@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from typing import Literal
 
@@ -19,6 +20,9 @@ class Settings(BaseSettings):
     # Origins allowed to use session tokens (the token's `azp` claim), e.g.
     # ["http://localhost:5173", "https://your-app.com"]. Empty = don't check.
     clerk_authorized_parties: list[str] = []
+    # Approved accounts (Clerk mode). Empty = any signed-in Clerk user.
+    # e.g. GRE_ALLOWED_EMAILS=["you@example.com"]
+    allowed_emails: list[str] = []
 
     # Claude. Credentials come from ANTHROPIC_API_KEY (or an `ant auth login` profile).
     ai_enabled: bool = True
@@ -32,4 +36,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    # GRE_ENV_FILE picks the settings file; empty disables it (the test suite
+    # does this so a developer's real .env can't change test results).
+    env_file = os.environ.get("GRE_ENV_FILE", ".env") or None
+    return Settings(_env_file=env_file)

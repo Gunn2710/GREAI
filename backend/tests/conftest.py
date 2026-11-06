@@ -11,6 +11,7 @@ if os.environ.get("GRE_TEST_POSTGRES"):
     os.environ["GRE_DATABASE_URL"] = _pg.get_uri()
 else:
     os.environ["GRE_DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
+os.environ["GRE_ENV_FILE"] = ""  # ignore the developer's backend/.env
 os.environ["GRE_AI_ENABLED"] = "false"
 os.environ["GRE_AUTH_MODE"] = "dev"
 

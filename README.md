@@ -186,3 +186,12 @@ Notes:
 - **Mismatches are flagged.** If the frontend and backend disagree on auth mode, the app shows a warning banner.
 - **User ids.** User ids are Clerk ids such as `user_2abc...`. Data from dev users isn't moved over to Clerk accounts.
 - **Not built yet.** There's no Clerk webhook to delete a user's data when their Clerk account is deleted.
+
+### Who can use the app
+
+Access is limited in two layers. Clerk's sign-up restrictions only stop *new* accounts, so the backend check is what actually locks the app:
+
+1. **Clerk sign-up is invite-only** (`sign_up_mode: restricted`). Strangers can't create accounts; add people with Clerk invitations.
+2. **The backend approves specific emails.** `GRE_ALLOWED_EMAILS` in `backend/.env` lists the accounts that may use the app. Clerk's session token carries the user's email (`primaryEmail` claim, set under Clerk → Sessions), and the backend returns 403 for anyone else, including accounts that already exist. The app then shows an "Access not approved" screen with a sign-out button. An empty list means any signed-in Clerk user.
+
+To give someone access, invite them in Clerk and add their email to `GRE_ALLOWED_EMAILS`, then restart the backend.

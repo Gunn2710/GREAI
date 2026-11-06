@@ -48,7 +48,28 @@ def _verify_clerk_token(token: str) -> str:
     azp = claims.get("azp")
     if settings.clerk_authorized_parties and azp and azp not in settings.clerk_authorized_parties:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session token is for a different site")
+
+    _require_approved(claims)
     return claims["sub"]
+
+
+NOT_APPROVED = "account_not_approved"
+
+
+def _require_approved(claims: dict) -> None:
+    """Authorization: a valid Clerk session only proves who the user is. When
+    GRE_ALLOWED_EMAILS is set, that email must also be on the list.
+
+    The email comes from the `primaryEmail` claim, which the Clerk session
+    token is customized to include (Clerk dashboard -> Sessions). Clerk's own
+    sign-up restrictions don't stop accounts that already exist; this does.
+    """
+    allowed = {e.strip().lower() for e in get_settings().allowed_emails if e.strip()}
+    if not allowed:
+        return
+    email = str(claims.get("primaryEmail") or "").strip().lower()
+    if email not in allowed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, NOT_APPROVED)
 
 
 def current_user_id(
