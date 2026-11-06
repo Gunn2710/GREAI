@@ -10,13 +10,35 @@ backend/    FastAPI (Python): API, item types, study loop, Claude integration
 frontend/   React + TypeScript + Vite
 ```
 
-## Run it
+## Run it with Docker
+
+```bash
+docker compose --env-file frontend/.env.local up --build
+```
+
+Then open http://localhost:8080. The stack has three containers:
+
+| Service | What it runs |
+|---|---|
+| `frontend` | The production React build, served by unprivileged nginx on :8080. It also proxies `/api` to the backend, so the browser sees one origin. |
+| `backend` | FastAPI with the C++ engine compiled into the image. It runs as a non-root user, applies migrations on startup, and isn't published to the host. |
+| `db` | PostgreSQL 16, like Supabase's, on a persistent `db-data` volume. |
+
+How configuration flows:
+- **Clerk publishable key.** `--env-file frontend/.env.local` supplies the key for the frontend build. It's public by design, so it's fine to bake into the JavaScript.
+- **Backend settings.** The backend reads `backend/.env` when the container starts. Env files are excluded from every image by the `.dockerignore` files.
+- **Database.** Docker uses its own `db` service. To use Supabase instead, add `DATABASE_URL=<session pooler string>` to the command's environment.
+- **Serving from another address.** Set `APP_ORIGIN` (default `http://localhost:8080`) so Clerk tokens from that site are accepted.
+
+To start fresh with an empty database, run `docker compose down -v`.
+
+## Run it locally (without Docker)
 
 ```bash
 # backend
 cd backend
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt      # also builds the C++ engine
+.venv/bin/pip install -r requirements-dev.txt -c constraints.txt   # also builds the C++ engine
 cp .env.example .env                            # add ANTHROPIC_API_KEY for AI features
 .venv/bin/uvicorn app.main:app --reload --port 8000
 

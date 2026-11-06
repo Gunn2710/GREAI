@@ -1,0 +1,58 @@
+# GRE AI: full stack in Docker.
+#
+#   docker compose --env-file frontend/.env.local up --build
+#
+# --env-file only feeds ${...} values below: the Clerk publishable key for the
+# frontend build. Backend settings (Clerk issuer, Claude key, ...) come from
+# backend/.env at run time. Nothing secret is baked into an image.
+#
+# Then open http://localhost:8080
+
+name: gre-ai
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gre
+      POSTGRES_PASSWORD: gre        # local-only database, not reachable from your network
+      POSTGRES_DB: gre
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gre -d gre"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - path: backend/.env
+        required: false
+    environment:
+      # Docker uses its own database setting, so backend/.env can keep its
+      # SQLite line for running without Docker. Set DATABASE_URL to your
+      # Supabase connection string to use Supabase instead of the db service.
+      GRE_DATABASE_URL: ${DATABASE_URL:-postgresql://gre:gre@db:5432/gre}
+      # Clerk session tokens name the site they were issued for.
+      GRE_CLERK_AUTHORIZED_PARTIES: '["${APP_ORIGIN:-http://localhost:8080}"]'
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: frontend
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  db-data:
