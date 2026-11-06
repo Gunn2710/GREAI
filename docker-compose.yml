@@ -26,9 +26,7 @@ services:
       retries: 10
 
   backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    build: backend
     env_file:
       - path: backend/.env
         required: false

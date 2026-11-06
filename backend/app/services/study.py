@@ -3,12 +3,12 @@ import random
 import uuid
 from datetime import datetime, time, timezone
 
-import vocab_engine as ve
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app import engine_bridge as eb
+from app import vocab_engine as ve
 from app.config import get_settings
 from app.items import vocab  # noqa: F401  (registers vocab item types)
 from app.items.base import get_item_type

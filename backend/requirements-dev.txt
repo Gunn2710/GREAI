@@ -2,9 +2,6 @@
 #   pip install -r requirements-dev.txt -c constraints.txt
 -r requirements.txt
 
-# C++ engine (builds the vocab_engine extension; pybind11 is fetched at build time)
-../engine
-
 pytest>=8
 httpx>=0.27
 pgserver>=0.1.4   # throwaway local PostgreSQL for GRE_TEST_POSTGRES=1 test runs

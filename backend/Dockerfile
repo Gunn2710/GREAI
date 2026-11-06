@@ -1,28 +1,16 @@
 # syntax=docker/dockerfile:1
-# Backend API. Build context is the repository root (it needs engine/ too):
-#   docker build -f backend/Dockerfile .
-
-# --- Build stage: compile the C++ engine and collect wheels -------------------
-FROM python:3.12-slim AS build
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends g++ \
-    && rm -rf /var/lib/apt/lists/*
-WORKDIR /src
-COPY backend/requirements.txt backend/constraints.txt ./
-RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt -c constraints.txt
-COPY engine/ engine/
-RUN pip wheel --no-cache-dir --no-deps --wheel-dir /wheels ./engine
-
-# --- Runtime stage --------------------------------------------------------------
+# Backend API. Build context is backend/:
+#   docker build backend
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 RUN useradd --create-home --uid 10001 app
-COPY --from=build /wheels /tmp/wheels
-RUN pip install --no-cache-dir --no-index /tmp/wheels/* && rm -rf /tmp/wheels
 
 WORKDIR /app
-COPY --chown=app:app backend/ .
+COPY requirements.txt constraints.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
+
+COPY --chown=app:app . .
 # The app user must be able to create files here (e.g. a SQLite database).
 RUN chown app:app /app
 USER app

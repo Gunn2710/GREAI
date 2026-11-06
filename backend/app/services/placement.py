@@ -11,11 +11,11 @@ Word difficulty lives in app/services/difficulty.py.
 import random
 import uuid
 
-import vocab_engine as ve
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import vocab_engine as ve
 from app.items.base import get_item_type
 from app.models import Card, IssuedItem, PlacementRun, Word, utcnow
 from app.services.difficulty import known_card, tier_prior, word_difficulty

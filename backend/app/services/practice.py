@@ -10,11 +10,11 @@ import random
 import uuid
 from datetime import timedelta
 
-import vocab_engine as ve
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import vocab_engine as ve
 from app.items import verbal  # noqa: F401  (registers tc / se)
 from app.items.base import get_item_type
 from app.models import Attempt, IssuedItem, Item, UserParams, UserSkill, utcnow
