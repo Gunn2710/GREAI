@@ -27,7 +27,6 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=url.startswith("sqlite"),
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -36,12 +35,7 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     connectable = make_engine(database_url())
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            # SQLite can't ALTER most things in place; batch mode rebuilds tables.
-            render_as_batch=connection.dialect.name == "sqlite",
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
     connectable.dispose()

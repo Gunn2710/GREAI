@@ -11,8 +11,6 @@ COPY requirements.txt constraints.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY --chown=app:app . .
-# The app user must be able to create files here (e.g. a SQLite database).
-RUN chown app:app /app
 USER app
 
 EXPOSE 8000

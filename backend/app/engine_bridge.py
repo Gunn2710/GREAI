@@ -42,8 +42,6 @@ DEPTH_NAMES = ["new", "recognize", "recall", "discriminate", "use"]
 def to_days(dt: datetime | None) -> float:
     if dt is None:
         return 0.0
-    if dt.tzinfo is None:  # SQLite drops tzinfo; values are stored as UTC
-        dt = dt.replace(tzinfo=timezone.utc)
     return dt.timestamp() / SECONDS_PER_DAY
 
 

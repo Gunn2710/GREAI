@@ -25,14 +25,9 @@ def normalize_url(url: str) -> str:
 
 
 def make_engine(url: str) -> Engine:
-    url = normalize_url(url)
-    if url.startswith("sqlite"):
-        connect_args = {"check_same_thread": False}
-    else:
-        # Supabase's transaction pooler (port 6543) can't hold prepared
-        # statements across transactions; turning them off is harmless elsewhere.
-        connect_args = {"prepare_threshold": None}
-    return create_engine(url, connect_args=connect_args, pool_pre_ping=True)
+    # Supabase's transaction pooler (port 6543) can't hold prepared statements
+    # across transactions; turning them off is harmless elsewhere.
+    return create_engine(normalize_url(url), connect_args={"prepare_threshold": None}, pool_pre_ping=True)
 
 
 engine = make_engine(get_settings().database_url)

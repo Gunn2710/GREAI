@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { Pronunciation, SpeakButton } from './Pronounce'
+import { Phrases, Relations } from './WordCard'
 import type { Confidence, StudyItem, WordDetail } from '../lib/types'
 
 export type Submit = (response: Record<string, unknown>, responseMs: number, confidence?: Confidence) => void
@@ -98,7 +99,10 @@ function Flashcard({ item, busy, onSubmit }: Props) {
       <Pronunciation value={back.pronunciation} />
       <p className="definition">{back.definition}</p>
       {back.nuance && <p className="nuance">{back.nuance}</p>}
+      {/* `?? []`: flashcards issued before phrases existed don't carry them. */}
+      <Phrases phrases={back.phrases ?? []} />
       {back.examples[0] && <p className="example">“{back.examples[0]}”</p>}
+      <Relations word={back} />
       <div className="rating">
         <span className="muted small">How well did you know it?</span>
         <div className="row">

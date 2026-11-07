@@ -29,6 +29,7 @@ def word_detail(word: Word) -> dict:
         "pronunciation": word.pronunciation,
         "definition": word.definition,
         "nuance": word.nuance,
+        "phrases": word.phrases,
         "examples": word.examples,
         "synonyms": word.synonyms,
         "antonyms": word.antonyms,

@@ -39,7 +39,7 @@ To start fresh with an empty database, run `docker compose down -v`.
 cd backend
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt -c constraints.txt
-cp .env.example .env                            # add ANTHROPIC_API_KEY for AI features
+cp .env.example .env                            # set GRE_DATABASE_URL (Supabase); ANTHROPIC_API_KEY for AI
 .venv/bin/uvicorn app.main:app --reload --port 8000
 
 # frontend (second terminal)
@@ -83,10 +83,11 @@ Every word has a stress-marked respelling (`"pronunciation": "luh-KAH-nik"` in t
 
 ## Testing without signing in
 
-With Clerk on, the main dev stack (backend on :8000, frontend on :5173) requires sign-in. For browser testing without it, run a second stack on :8001 and :5174 in dev-auth mode. It uses the same SQLite database and never touches the Clerk setup. Environment variables override the `.env` files:
+With Clerk on, the main dev stack (backend on :8000, frontend on :5173) requires sign-in. For browser testing without it, run a second stack on :8001 and :5174 in dev-auth mode. It never touches the Clerk setup. Give it its own database so dev users never land in Supabase: Docker's local Postgres works (`docker compose up -d db`, reachable on port 5433). Environment variables override the `.env` files:
 
 ```bash
-cd backend && GRE_AUTH_MODE=dev .venv/bin/uvicorn app.main:app --port 8001
+docker compose up -d db
+cd backend && GRE_AUTH_MODE=dev GRE_DATABASE_URL=postgresql://gre:gre@localhost:5433/gre .venv/bin/uvicorn app.main:app --port 8001
 cd frontend && VITE_CLERK_PUBLISHABLE_KEY= GRE_API_TARGET=http://localhost:8001 npm run dev -- --port 5174
 ```
 
@@ -111,11 +112,12 @@ The placement check (`/placement`) has 20 adaptive questions. Each one asks you 
 
 ## Word bank
 
-237 words in `backend/app/seed/vocab/`. The server validates and syncs the bank on startup: new words are added, changed entries are updated, and nothing is deleted.
+340 words in `backend/app/seed/vocab/`. The server validates and syncs the bank on startup: new words are added, changed entries are updated, and nothing is deleted.
 
-- **Frequency tiers.** Each word has a tier: 1 = high frequency (126 words), 2 = medium (100), 3 = advanced (11). New words are introduced high-frequency first.
+- **Frequency tiers.** Each word has a tier: 1 = high frequency (160 words), 2 = medium (156), 3 = advanced (24). New words are introduced high-frequency first.
 - **Where the tiers come from.** Words tagged `"freq_source": "magoosh_top20"` are Magoosh's public "Top 20 most tested GRE words"; all 20 are in the bank. Magoosh's Common/Basic/Advanced flashcard decks don't publish their word lists. The other tiers are editorial judgments to review.
 - **Clusters and families.** A cluster groups near-synonyms. A family groups clusters that are easy to confuse, such as *soothe* and *ease*. Quiz distractors never come from the target's own family, and no two options are listed synonyms of each other. As a result, every synonym-pair question has exactly one right pair.
+- **Common phrases.** Each word lists 2–4 phrases showing how it's most often used in real writing, such as *widely lauded* or *a false dichotomy*, never pairings that are merely grammatical. They appear on the word page and the back of the flashcard, and the AI tutor sees them too. Every phrase must contain the word itself or a regular inflection of it (*lauded*, *extolled*).
 - **Checks.** `validate_bank` in `app/seed/seed.py` enforces these rules. One example: a synonym that is itself a bank word must belong to the same family.
 
 ## Adding a section later
@@ -139,11 +141,11 @@ Set `GRE_AI_ENABLED=false` to run without credentials. Usage questions are then 
 
 ## Supabase (database) and Clerk (accounts)
 
-Both are wired in and switched on by configuration alone. Without them, the app runs on SQLite with dev users.
+Both are switched on by configuration alone. The backend runs on PostgreSQL only: Supabase normally, or Docker's local Postgres. Without Clerk, it runs with dev users.
 
 ### Supabase
 
-1. **Create a Supabase project.** Open **Connect** and copy the **Session pooler** connection string; it works over IPv4.
+1. **Create a Supabase project.** Open **Connect** and copy a connection string. **Direct connection** is IPv6-only: fine on a Mac with IPv6, but Docker and Vercel need the **Session pooler** string, which works over IPv4.
 2. **Point the backend at it.** In `backend/.env`, set:
 
    ```
@@ -156,7 +158,7 @@ Both are wired in and switched on by configuration alone. Without them, the app 
 Notes:
 - **Row-level security.** Migration `0002` enables RLS, with no policies, on every table. That blocks Supabase's auto-generated Data API (anyone with the anon key) from reading app data. The backend connects as the table owner, so RLS doesn't apply to it. All data access goes through FastAPI; the frontend never talks to Supabase directly.
 - **Changing models.** After editing `app/models.py`, run `alembic revision --autogenerate -m "..."` from `backend/`. The test `test_migrations_match_models` fails if you forget.
-- **Testing on Postgres.** `GRE_TEST_POSTGRES=1 .venv/bin/pytest` runs the whole suite on a throwaway local PostgreSQL 16 (the `pgserver` dev dependency).
+- **Tests.** `.venv/bin/pytest` runs on a throwaway local PostgreSQL (the `pgserver` dev dependency), never on Supabase. Set `GRE_TEST_DATABASE_URL` to use an existing empty database instead, e.g. a CI service container.
 
 ### Clerk
 

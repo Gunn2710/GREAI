@@ -25,6 +25,7 @@ export interface WordDetail {
   pronunciation: string | null
   definition: string
   nuance: string | null
+  phrases: string[]
   examples: string[]
   synonyms: string[]
   antonyms: string[]

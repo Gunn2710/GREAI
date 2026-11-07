@@ -1,19 +1,15 @@
-"""Database schema. Portable between SQLite (dev) and Postgres (Supabase).
+"""Database schema (PostgreSQL / Supabase).
 
 User ids are opaque strings (Clerk user ids), so there are no foreign keys to
 an auth table.
 """
 from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON as _JSON
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
-
-# JSONB on Postgres (Supabase), plain JSON elsewhere (SQLite in dev and tests).
-JSON = _JSON().with_variant(JSONB(), "postgresql")
 
 
 def utcnow() -> datetime:
@@ -52,10 +48,12 @@ class Word(Base):
     pronunciation: Mapped[str | None] = mapped_column(String(80), nullable=True)
     definition: Mapped[str] = mapped_column(Text)
     nuance: Mapped[str | None] = mapped_column(Text, nullable=True)
-    examples: Mapped[list] = mapped_column(JSON, default=list)
-    synonyms: Mapped[list] = mapped_column(JSON, default=list)
-    antonyms: Mapped[list] = mapped_column(JSON, default=list)
-    confusables: Mapped[list] = mapped_column(JSON, default=list)
+    examples: Mapped[list] = mapped_column(JSONB, default=list)
+    # The most common ways the word is actually used, e.g. "widely lauded".
+    phrases: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    synonyms: Mapped[list] = mapped_column(JSONB, default=list)
+    antonyms: Mapped[list] = mapped_column(JSONB, default=list)
+    confusables: Mapped[list] = mapped_column(JSONB, default=list)
     cluster: Mapped[str] = mapped_column(String(64), index=True)
     skill_id: Mapped[str] = mapped_column(ForeignKey("skills.id"))
     tier: Mapped[int] = mapped_column(Integer, default=1)  # 1 = most common on the GRE
@@ -75,7 +73,7 @@ class Item(Base):
     difficulty_label: Mapped[str] = mapped_column(String(16))  # easy / medium / hard
     difficulty_prior: Mapped[float] = mapped_column(Float, default=0.0)
     difficulty_offset: Mapped[float] = mapped_column(Float, default=0.0)  # learned from answers
-    content: Mapped[dict] = mapped_column(JSON)  # authored content; see app/seed/verbal
+    content: Mapped[dict] = mapped_column(JSONB)  # authored content; see app/seed/verbal
     status: Mapped[str] = mapped_column(String(16), default="active")
 
     @property
@@ -137,8 +135,8 @@ class IssuedItem(Base):
     item_type: Mapped[str] = mapped_column(String(32))
     word_id: Mapped[int | None] = mapped_column(ForeignKey("words.id"), nullable=True)
     bank_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
-    payload: Mapped[dict] = mapped_column(JSON)
-    answer: Mapped[dict] = mapped_column(JSON)
+    payload: Mapped[dict] = mapped_column(JSONB)
+    answer: Mapped[dict] = mapped_column(JSONB)
     hint_used: Mapped[bool] = mapped_column(Boolean, default=False)
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -161,7 +159,7 @@ class Attempt(Base):
     response_ms: Mapped[int] = mapped_column(Integer, default=0)
     confidence: Mapped[int] = mapped_column(Integer, default=0)
     hint_used: Mapped[bool] = mapped_column(Boolean, default=False)
-    response: Mapped[dict] = mapped_column(JSON, default=dict)
+    response: Mapped[dict] = mapped_column(JSONB, default=dict)
     comfort_before: Mapped[float | None] = mapped_column(Float, nullable=True)
     comfort_after: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
@@ -191,7 +189,7 @@ class PlacementRun(Base):
     theta: Mapped[float] = mapped_column(Float, default=0.0)
     se: Mapped[float] = mapped_column(Float, default=1.0)
     # [{"word_id", "b", "correct", "dont_know", "ms"}, ...]
-    responses: Mapped[list] = mapped_column(JSON, default=list)
+    responses: Mapped[list] = mapped_column(JSONB, default=list)
     fast_tracked: Mapped[int] = mapped_column(Integer, default=0)
 
 
@@ -201,6 +199,6 @@ class UserParams(Base):
     __tablename__ = "user_params"
 
     user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    speed_baselines: Mapped[dict] = mapped_column(JSON, default=dict)
-    fsrs_weights: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    speed_baselines: Mapped[dict] = mapped_column(JSONB, default=dict)
+    fsrs_weights: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     vocab_level: Mapped[float | None] = mapped_column(Float, nullable=True)

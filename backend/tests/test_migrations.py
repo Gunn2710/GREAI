@@ -1,10 +1,13 @@
-import tempfile
+import uuid
 
+import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
+from pydantic import ValidationError
 from sqlalchemy import inspect, text
 
+from app.config import Settings
 from app.db import BASELINE_REVISION, Base, alembic_config, engine, init_db, make_engine
 
 HEAD = ScriptDirectory.from_config(alembic_config()).get_current_head()
@@ -15,7 +18,10 @@ def legacy_database(name: str):
     (revision 0001) with no Alembic bookkeeping."""
     from alembic import command
 
-    db = make_engine(f"sqlite:///{tempfile.mkdtemp()}/{name}.db")
+    db_name = f"{name}_{uuid.uuid4().hex[:8]}"
+    with engine.execution_options(isolation_level="AUTOCOMMIT").connect() as conn:
+        conn.execute(text(f"CREATE DATABASE {db_name}"))
+    db = make_engine(engine.url.set(database=db_name).render_as_string(hide_password=False))
     command.upgrade(alembic_config(db.url.render_as_string(hide_password=False)), BASELINE_REVISION)
     with db.begin() as conn:
         conn.execute(text("DROP TABLE alembic_version"))
@@ -59,9 +65,7 @@ def test_interrupted_first_migration_is_recovered():
         assert MigrationContext.configure(conn).get_current_revision() == HEAD
 
 
-def test_row_level_security_on_postgres(client):
-    if engine.dialect.name != "postgresql":
-        return
+def test_row_level_security(client):
     with engine.connect() as conn:
         rows = dict(conn.execute(text(
             "SELECT relname, relrowsecurity FROM pg_class "
@@ -69,3 +73,9 @@ def test_row_level_security_on_postgres(client):
         )).all())
     tables = set(inspect(engine).get_table_names())
     assert tables and all(rows[t] for t in tables), rows
+
+
+def test_only_postgres_urls_are_accepted():
+    with pytest.raises(ValidationError, match="PostgreSQL"):
+        Settings(_env_file=None, database_url="sqlite:///./gre_prep.db")
+    assert Settings(_env_file=None, database_url="postgresql://u:p@h:5432/db").database_url

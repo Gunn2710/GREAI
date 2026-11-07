@@ -63,8 +63,7 @@ def _pick(db: Session, user_id: str, kind: str, rating: float) -> Item:
     cutoff = utcnow() - timedelta(days=RECENT_DAYS)
 
     def seen_at(item: Item):
-        ts = last_seen.get(item.id)
-        return ts.replace(tzinfo=cutoff.tzinfo) if ts is not None and ts.tzinfo is None else ts
+        return last_seen.get(item.id)
 
     unseen = [i for i in items if seen_at(i) is None]
     pool = unseen or [i for i in items if seen_at(i) < cutoff]

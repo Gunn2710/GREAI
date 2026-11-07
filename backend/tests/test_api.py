@@ -67,6 +67,7 @@ def test_new_word_flow(client, db):
     assert item["item_type"] == "flashcard"
     assert "back" in item["payload"]
     assert item["payload"]["pronunciation"] and item["payload"]["back"]["pronunciation"]
+    assert len(item["payload"]["back"]["phrases"]) == 3
     assert "answer" not in item
 
     out = client.post(
@@ -203,6 +204,7 @@ def test_word_endpoints(client):
     detail = client.get(f"/api/words/{words[0]['id']}", headers=headers("alice")).json()
     assert detail["word"]["synonyms"]
     assert detail["word"]["pronunciation"] == "luh-KAH-nik"
+    assert detail["word"]["phrases"] == ["laconic reply", "laconic style", "laconic wit"]
     tutor = client.post(
         f"/api/words/{words[0]['id']}/tutor",
         json={"messages": [{"role": "user", "content": "hi"}]},
@@ -216,6 +218,16 @@ def test_bank_is_valid():
     sources = {w.get("freq_source") for w in BANK_WORDS}
     assert sum(w.get("freq_source") == "magoosh_top20" for w in BANK_WORDS) == 20
     assert sources <= {None, "editorial", "magoosh_top20"}
+
+
+def test_phrases_must_use_the_word():
+    laud = next(w for w in BANK_WORDS if w["lemma"] == "laud")
+    extol = next(w for w in BANK_WORDS if w["lemma"] == "extol")
+    # Inflections count ("lauded", "extolled"); other words and derivations don't.
+    assert any("lauded" in p for p in laud["phrases"]) and any("extolled" in p for p in extol["phrases"])
+    for bad in (["praise someone highly", "laud the team"], ["a laudable effort", "laud the team"], ["laud the team"]):
+        words = [{**w, "phrases": bad} if w is laud else w for w in BANK_WORDS]
+        assert validate_bank(BANK_META, words) == ["laud: needs 2-4 common phrases that each use the word"]
 
 
 def test_sync_is_idempotent_and_updates(client, db):

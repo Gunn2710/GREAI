@@ -17,6 +17,8 @@ services:
       POSTGRES_USER: gre
       POSTGRES_PASSWORD: gre        # local-only database, not reachable from your network
       POSTGRES_DB: gre
+    ports:
+      - "127.0.0.1:5433:5432"     # this machine only; for the dev-auth stack in the README
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
@@ -31,9 +33,9 @@ services:
       - path: backend/.env
         required: false
     environment:
-      # Docker uses its own database setting, so backend/.env can keep its
-      # SQLite line for running without Docker. Set DATABASE_URL to your
-      # Supabase connection string to use Supabase instead of the db service.
+      # Docker uses the local db service, so backend/.env can keep pointing
+      # at Supabase. Set DATABASE_URL to your Supabase Session pooler string
+      # to use Supabase instead (the direct connection is IPv6-only).
       GRE_DATABASE_URL: ${DATABASE_URL:-postgresql://gre:gre@db:5432/gre}
       # Clerk session tokens name the site they were issued for.
       GRE_CLERK_AUTHORIZED_PARTIES: '["${APP_ORIGIN:-http://localhost:8080}"]'

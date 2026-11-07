@@ -31,7 +31,7 @@ ROOT_SKILLS = [
     ("writing", "writing", None, "Analytical Writing"),
 ]
 
-WORD_FIELDS = ("pos", "pronunciation", "definition", "nuance", "examples", "synonyms", "antonyms", "confusables", "cluster", "tier")
+WORD_FIELDS = ("pos", "pronunciation", "definition", "nuance", "phrases", "examples", "synonyms", "antonyms", "confusables", "cluster", "tier")
 
 
 # Respelling: hyphenated lowercase syllables with exactly one CAPITALIZED
@@ -48,6 +48,17 @@ def valid_pronunciation(value: str | None) -> bool:
         if not RESPELLING.match(variant) or sum(s.isupper() for s in syllables) != 1:
             return False
     return True
+
+
+def inflections(lemma: str) -> set[str]:
+    """The lemma plus its regular inflections (plural, -s, -ed, -ing)."""
+    forms = {lemma, lemma + "s", lemma + "es", lemma + "d", lemma + "ed", lemma + "ing"}
+    forms |= {lemma + lemma[-1] + "ed", lemma + lemma[-1] + "ing"}  # extolled
+    if lemma.endswith("e"):
+        forms.add(lemma[:-1] + "ing")
+    if lemma.endswith("y") and lemma[-2] not in "aeiou":
+        forms |= {lemma[:-1] + "ies", lemma[:-1] + "ied"}
+    return forms
 
 
 def load_bank(directory: Path = VOCAB_DIR) -> tuple[dict, list[dict]]:
@@ -89,10 +100,20 @@ def validate_bank(meta: dict, words: list[dict]) -> list[str]:
         pattern = re.compile(rf"\b{re.escape(lemma)}\b", re.IGNORECASE)
         if len(w["examples"]) < 2 or not all(pattern.search(s) for s in w["examples"]):
             problems.append(f"{lemma}: needs 2+ examples that each contain the exact lemma")
+        # Phrases are the word in its most common real-world combinations, so
+        # each one must use the word itself (or a regular inflection of it).
+        phrases = w.get("phrases", [])
+        form = re.compile(r"\b(?:" + "|".join(map(re.escape, inflections(lemma))) + r")\b", re.IGNORECASE)
+        if not 2 <= len(phrases) <= 4 or not all(form.search(p) for p in phrases):
+            problems.append(f"{lemma}: needs 2-4 common phrases that each use the word")
+        if len(set(phrases)) != len(phrases):
+            problems.append(f"{lemma}: duplicate phrase")
         if not valid_pronunciation(w.get("pronunciation")):
             problems.append(f"{lemma}: needs a pronunciation like \"luh-KAH-nik\" (one CAPITAL stressed syllable)")
         if not w["synonyms"]:
             problems.append(f"{lemma}: needs at least one synonym")
+        if len(set(w["synonyms"])) != len(w["synonyms"]):
+            problems.append(f"{lemma}: duplicate synonym")
         if lemma in w["synonyms"]:
             problems.append(f"{lemma}: lists itself as a synonym")
         if set(w["confusables"]) & set(w["synonyms"]):

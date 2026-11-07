@@ -222,6 +222,10 @@ textarea { resize: vertical; }
 .nuance { color: var(--muted); font-style: italic; }
 .example { color: var(--muted); }
 .examples { padding-left: 20px; color: var(--muted); margin: 8px 0; }
+.phrases { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 10px 0; }
+.phrases-label { flex-basis: 100%; font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.phrases ul { display: contents; list-style: none; }
+.phrases li { padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 0.9rem; }
 .relations { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 0.9rem; }
 .relations dt { font-weight: 600; }
 .relations dd { margin: 0; }

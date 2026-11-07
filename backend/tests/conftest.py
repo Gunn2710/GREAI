@@ -2,15 +2,16 @@ import os
 import tempfile
 
 # Configure before the app (and its cached settings / DB engine) is imported.
-# GRE_TEST_POSTGRES=1 runs the suite on a throwaway PostgreSQL (pgserver).
-_tmp = tempfile.mkdtemp()
-if os.environ.get("GRE_TEST_POSTGRES"):
+# Tests run on an empty PostgreSQL: GRE_TEST_DATABASE_URL if set (e.g. a CI
+# service container), otherwise a throwaway local server (pgserver). Never the
+# developer's Supabase database.
+if os.environ.get("GRE_TEST_DATABASE_URL"):
+    os.environ["GRE_DATABASE_URL"] = os.environ["GRE_TEST_DATABASE_URL"]
+else:
     import pgserver
 
-    _pg = pgserver.get_server(_tmp, cleanup_mode="stop")
+    _pg = pgserver.get_server(tempfile.mkdtemp(), cleanup_mode="stop")
     os.environ["GRE_DATABASE_URL"] = _pg.get_uri()
-else:
-    os.environ["GRE_DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
 os.environ["GRE_ENV_FILE"] = ""  # ignore the developer's backend/.env
 os.environ["GRE_AI_ENABLED"] = "false"
 os.environ["GRE_AUTH_MODE"] = "dev"

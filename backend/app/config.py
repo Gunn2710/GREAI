@@ -2,15 +2,15 @@ import os
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="GRE_", extra="ignore")
 
-    # SQLite for local dev. For Supabase, point this at the project's Postgres
-    # connection string (postgresql+psycopg://...); the schema is portable.
-    database_url: str = "sqlite:///./gre_prep.db"
+    # PostgreSQL connection string: Supabase in practice ("postgresql://...").
+    database_url: str
 
     # "dev": the user id comes from the X-Dev-User header (default "dev-user").
     # "clerk": verify the Clerk session JWT from the Authorization header.
@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     default_daily_new_words: int = 10
     seed_on_startup: bool = True
+
+    @field_validator("database_url")
+    @classmethod
+    def _postgres_only(cls, url: str) -> str:
+        if not url.startswith(("postgres://", "postgresql://", "postgresql+psycopg://")):
+            raise ValueError("GRE_DATABASE_URL must be a PostgreSQL connection string (postgresql://...)")
+        return url
 
 
 @lru_cache
