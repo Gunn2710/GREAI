@@ -140,9 +140,18 @@ Prompts always include the word's verified entry.
 `backend/scripts/generate_words.py` grows the word bank: one Claude call writes each entry and a second, independent call reviews it.
 Set `GRE_AI_ENABLED=false` to run without credentials. Usage questions are then never served.
 
+## Deploy on Vercel
+
+`vercel.json` deploys both halves as one Vercel project: `/api/*` goes to the FastAPI backend and everything else to the Vite frontend. Set these in the Vercel project's environment variables:
+
+- Backend: `GRE_DATABASE_URL` (the Supabase **Session pooler** string), `GRE_AUTH_MODE=clerk`, `GRE_CLERK_JWKS_URL`, `GRE_CLERK_ISSUER`, `GRE_ALLOWED_EMAILS`, `ANTHROPIC_API_KEY`. Add `GRE_CLERK_AUTHORIZED_PARTIES` only for a custom domain; the deployment's own Vercel URLs are accepted automatically.
+- Frontend: `VITE_CLERK_PUBLISHABLE_KEY`. It is read at build time, so redeploy after changing it.
+
+On Vercel the backend refuses to start unless Clerk sign-in and the approved-email list are configured, so a missing setting takes the app down instead of opening it up.
+
 ## Supabase (database) and Clerk (accounts)
 
-Both are switched on by configuration alone. The backend runs on PostgreSQL only: Supabase normally, or Docker's local Postgres. Without Clerk, it runs with dev users.
+Both are switched on by configuration alone. The backend runs on PostgreSQL only: Supabase normally, or Docker's local Postgres. Without Clerk, set `GRE_AUTH_MODE=dev` to run with dev users. Clerk is the default, so a deployment never falls back to dev users by accident.
 
 ### Supabase
 
