@@ -1,0 +1,10 @@
+# Keep secrets and local build state out of `vercel` CLI uploads.
+.env
+.env.*
+!.env.example
+**/.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache
+backend/tests

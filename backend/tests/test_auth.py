@@ -8,7 +8,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app import auth
-from app.config import get_settings
+from app.config import Settings, get_settings
 
 ISSUER = "https://clerk.example.test"
 JWKS_URL = f"{ISSUER}/.well-known/jwks.json"
@@ -145,3 +145,38 @@ def test_no_list_means_any_signed_in_user(client, clerk_mode):
 def test_list_is_ignored_in_dev_mode(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "allowed_emails", ["owner@example.com"])
     assert client.get("/api/me", headers={"X-Dev-User": "dev"}).status_code == 200
+
+
+SAFE = dict(
+    database_url="postgresql://u:p@db.example.test/postgres", auth_mode="clerk",
+    clerk_jwks_url=JWKS_URL, clerk_issuer=ISSUER, allowed_emails=["me@example.test"],
+)
+
+
+def test_default_auth_mode_is_clerk(monkeypatch):
+    monkeypatch.delenv("GRE_AUTH_MODE", raising=False)
+    assert Settings(_env_file=None, database_url=SAFE["database_url"]).auth_mode == "clerk"
+
+
+@pytest.mark.parametrize("unsafe", [
+    {"auth_mode": "dev"},          # anyone could claim any user
+    {"allowed_emails": []},        # any Clerk account could use the app (and Claude)
+    {"clerk_issuer": None},        # tokens can't be verified
+])
+def test_vercel_refuses_unsafe_settings(monkeypatch, unsafe):
+    monkeypatch.setenv("VERCEL", "1")
+    with pytest.raises(ValueError, match="Unsafe settings for a Vercel deployment"):
+        Settings(_env_file=None, **{**SAFE, **unsafe})
+
+
+def test_vercel_accepts_its_own_urls_as_authorized_parties(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("VERCEL_PROJECT_PRODUCTION_URL", "gre.example.test")
+    monkeypatch.setenv("VERCEL_URL", "gre-abc123.vercel.app")
+    s = Settings(_env_file=None, **SAFE, clerk_authorized_parties=["https://gre.example.test"])
+    assert s.clerk_authorized_parties == ["https://gre.example.test", "https://gre-abc123.vercel.app"]
+
+
+def test_local_dev_mode_still_allowed(monkeypatch):
+    monkeypatch.delenv("VERCEL", raising=False)
+    assert Settings(_env_file=None, **{**SAFE, "auth_mode": "dev", "allowed_emails": []}).auth_mode == "dev"

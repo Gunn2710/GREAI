@@ -34,6 +34,8 @@ app.add_middleware(
 app.include_router(router)
 
 
+# /health for Docker; /api/health is the path Vercel routes to this service.
 @app.get("/health")
+@app.get("/api/health")
 def health():
     return {"ok": True}
