@@ -25,12 +25,32 @@ export interface WordDetail {
   pronunciation: string | null
   definition: string
   nuance: string | null
+  phrases: string[]
   examples: string[]
   synonyms: string[]
   antonyms: string[]
   confusables: string[]
   cluster: string
   tier: number
+  /** Study set number (1 = most common words) */
+  set?: number | null
+}
+
+export type SetStatus = 'done' | 'reviewing' | 'current' | 'locked'
+
+export interface WordSet {
+  number: number
+  /** frequency tier of its words (1-3) */
+  tier: number
+  size: number
+  started: number
+  learned: number
+  status: SetStatus
+}
+
+export interface SetsResponse {
+  sets: WordSet[]
+  current: number | null
 }
 
 export interface CardSummary {
@@ -62,7 +82,15 @@ export interface StudyItem {
 }
 
 export type NextResponse =
-  | { done: false; item: StudyItem; is_new_word: boolean; likely_known: boolean; card: CardSummary }
+  | {
+      done: false
+      item: StudyItem
+      is_new_word: boolean
+      likely_known: boolean
+      card: CardSummary
+      /** the set new words are coming from, null once every word is started */
+      set: (WordSet & { total: number }) | null
+    }
   | { done: true; next_due: string | null }
 
 export interface Hint {
@@ -90,6 +118,7 @@ export interface AnswerResult {
 
 export interface Stats {
   total_words: number
+  sets: { total: number; done: number; current: WordSet | null }
   tiers: Record<Tier, number>
   depth: Record<DepthName, number>
   due_now: number
@@ -107,6 +136,7 @@ export interface WordListEntry {
   lemma: string
   pos: string
   tier: number
+  set: number | null
   definition: string
   cluster: string
   card: CardSummary

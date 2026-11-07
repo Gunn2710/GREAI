@@ -1,0 +1,18 @@
+# TODO
+
+- [ ] CI pipeline (GitHub Actions): backend tests, frontend lint + build
+- [ ] Host frontend on Vercel
+- [ ] Host backend on Vercel (move migrations and word-bank sync out of startup into a deploy step)
+- [ ] Use Supabase's Session pooler string for Docker and Vercel (direct connection is IPv6-only)
+- [x] Add phrases to each word: always the most common way the word is actually used (e.g. "widely lauded", "laud someone for something"), not made-up combos
+- [ ] More example sentences per word (3–4, different contexts)
+- [x] Home page (with different sections)
+- [ ] Clerk production instance
+- [ ] Limit Claude usage per user
+- [ ] Grow the word bank
+- [ ] Reading Comprehension
+- [ ] Mock test mode
+- [ ] Quant section
+- [ ] Writing section
+- [ ] Streaks and reminders
+- [ ] Make it phone screen compatible

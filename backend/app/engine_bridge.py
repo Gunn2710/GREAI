@@ -1,12 +1,11 @@
-"""Glue between database rows and the C++ `vocab_engine` module.
+"""Glue between database rows and the `vocab_engine` package.
 
 The engine works in fractional days since the Unix epoch; the database stores
 timezone-aware datetimes.
 """
 from datetime import datetime, timezone
 
-import vocab_engine as ve
-
+from app import vocab_engine as ve
 from app.models import Card
 
 SECONDS_PER_DAY = 86400.0
@@ -43,8 +42,6 @@ DEPTH_NAMES = ["new", "recognize", "recall", "discriminate", "use"]
 def to_days(dt: datetime | None) -> float:
     if dt is None:
         return 0.0
-    if dt.tzinfo is None:  # SQLite drops tzinfo; values are stored as UTC
-        dt = dt.replace(tzinfo=timezone.utc)
     return dt.timestamp() / SECONDS_PER_DAY
 
 
@@ -98,14 +95,14 @@ def baselines_from_json(data: dict | None) -> ve.SpeedBaselines:
             continue
         s = ve.SpeedStats()
         s.n, s.mean, s.m2 = stats.get("n", 0.0), stats.get("mean", 0.0), stats.get("m2", 0.0)
-        b.set(mode, s)
+        b.by_mode[mode] = s
     return b
 
 
 def baselines_to_json(b: ve.SpeedBaselines) -> dict:
     out = {}
     for name, mode in MODE_BY_NAME.items():
-        s = b.get(mode)
+        s = b.by_mode[mode]
         if s.n > 0:
             out[name] = {"n": s.n, "mean": s.mean, "m2": s.m2}
     return out

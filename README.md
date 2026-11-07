@@ -5,9 +5,10 @@ model that learns how comfortable each user is with each word. The core is
 built to add Quant and Writing later.
 
 ```
-engine/     C++17 core: FSRS-5 scheduler + word-comfort model, exposed to Python via pybind11
 backend/    FastAPI (Python): API, item types, study loop, Claude integration
-frontend/   React + TypeScript + Vite
+            app/vocab_engine/: FSRS-5 scheduler, word-comfort model, placement scoring
+frontend/   React + TypeScript + Vite, styled with Tailwind CSS and shadcn/ui
+            src/components/ui/: shadcn components (add more with `npx shadcn@latest add <name>`)
 ```
 
 ## Run it with Docker
@@ -21,12 +22,12 @@ Then open http://localhost:8080. The stack has three containers:
 | Service | What it runs |
 |---|---|
 | `frontend` | The production React build, served by unprivileged nginx on :8080. It also proxies `/api` to the backend, so the browser sees one origin. |
-| `backend` | FastAPI with the C++ engine compiled into the image. It runs as a non-root user, applies migrations on startup, and isn't published to the host. |
+| `backend` | FastAPI. It runs as a non-root user, applies migrations on startup, and isn't published to the host. |
 | `db` | PostgreSQL 16, like Supabase's, on a persistent `db-data` volume. |
 
 How configuration flows:
 - **Clerk publishable key.** `--env-file frontend/.env.local` supplies the key for the frontend build. It's public by design, so it's fine to bake into the JavaScript.
-- **Backend settings.** The backend reads `backend/.env` when the container starts. Env files are excluded from every image by the `.dockerignore` files.
+- **Backend settings.** The backend reads `backend/.env` when the container starts. Env files are excluded from both images by their `.dockerignore` files.
 - **Database.** Docker uses its own `db` service. To use Supabase instead, add `DATABASE_URL=<session pooler string>` to the command's environment.
 - **Serving from another address.** Set `APP_ORIGIN` (default `http://localhost:8080`) so Clerk tokens from that site are accepted.
 
@@ -38,8 +39,8 @@ To start fresh with an empty database, run `docker compose down -v`.
 # backend
 cd backend
 python3 -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt -c constraints.txt   # also builds the C++ engine
-cp .env.example .env                            # add ANTHROPIC_API_KEY for AI features
+.venv/bin/pip install -r requirements-dev.txt -c constraints.txt
+cp .env.example .env                            # set GRE_DATABASE_URL (Supabase); ANTHROPIC_API_KEY for AI
 .venv/bin/uvicorn app.main:app --reload --port 8000
 
 # frontend (second terminal)
@@ -51,20 +52,17 @@ npm run dev                                     # http://localhost:5173, proxies
 Tests:
 
 ```bash
-make -C engine test                # C++ engine
-cd backend && .venv/bin/pytest     # API + item types
+cd backend && .venv/bin/pytest     # engine, API and item types
 ```
-
-After editing C++ code, rebuild the extension with `.venv/bin/pip install ../engine` from `backend/`.
 
 ## How the comfort model works
 
-Each user–word pair has a `WordCard` (see `engine/include/vocab_engine/types.hpp`):
+Each user–word pair has a `WordCard` (see `backend/app/vocab_engine/types.py`):
 
 | Signal | Source |
 |---|---|
-| Memory strength (stability, difficulty, recall probability) | FSRS-5 (`engine/src/fsrs.cpp`) |
-| Depth of knowledge: recognize → recall → discriminate → use | which quiz modes the user passes (`comfort.cpp: update_depth`) |
+| Memory strength (stability, difficulty, recall probability) | FSRS-5 (`vocab_engine/fsrs.py`) |
+| Depth of knowledge: recognize → recall → discriminate → use | which quiz modes the user passes (`comfort.py: _update_depth`) |
 | Fluency | response time vs. the user's own per-mode baseline (Welford on log ms) |
 | Confidence calibration | Sure / Unsure / Guess tap before the answer is revealed |
 
@@ -86,10 +84,11 @@ Every word has a stress-marked respelling (`"pronunciation": "luh-KAH-nik"` in t
 
 ## Testing without signing in
 
-With Clerk on, the main dev stack (backend on :8000, frontend on :5173) requires sign-in. For browser testing without it, run a second stack on :8001 and :5174 in dev-auth mode. It uses the same SQLite database and never touches the Clerk setup. Environment variables override the `.env` files:
+With Clerk on, the main dev stack (backend on :8000, frontend on :5173) requires sign-in. For browser testing without it, run a second stack on :8001 and :5174 in dev-auth mode. It never touches the Clerk setup. Give it its own database so dev users never land in Supabase: Docker's local Postgres works (`docker compose up -d db`, reachable on port 5433). Environment variables override the `.env` files:
 
 ```bash
-cd backend && GRE_AUTH_MODE=dev .venv/bin/uvicorn app.main:app --port 8001
+docker compose up -d db
+cd backend && GRE_AUTH_MODE=dev GRE_DATABASE_URL=postgresql://gre:gre@localhost:5433/gre .venv/bin/uvicorn app.main:app --port 8001
 cd frontend && VITE_CLERK_PUBLISHABLE_KEY= GRE_API_TARGET=http://localhost:8001 npm run dev -- --port 5174
 ```
 
@@ -99,14 +98,14 @@ The Practice page (`/practice`) serves original questions from `backend/app/seed
 
 - **Format and scoring.** Text Completion has 1–3 blanks: 5 choices for one blank, 3 per blank otherwise, with credit only if every blank is right. Sentence Equivalence has 6 choices; you pick the two that each complete the sentence with the same meaning. Every SE question includes a trap pair: two synonyms that fit together but not the sentence.
 - **Authoring.** The first option of each blank (TC) or the first two options (SE) are correct; options are shuffled when a question is served. Each question has a clue (the hint) and an explanation. `validate_items` in `app/seed/items.py` enforces the format.
-- **Ratings.** Each user has a rating per skill (`user_skills`: `verbal.tc`, `verbal.se`), starting from the placement level when there is one. Questions are picked near the rating, unseen first, with nothing answered in the last 14 days repeated. After each answer, an Elo update in the C++ engine moves both the rating and the question's learned difficulty, using the chance of guessing right (1/5, 1/9, 1/27 for 1–3 blanks; 1/15 for SE). Answers that used the hint count half.
+- **Ratings.** Each user has a rating per skill (`user_skills`: `verbal.tc`, `verbal.se`), starting from the placement level when there is one. Questions are picked near the rating, unseen first, with nothing answered in the last 14 days repeated. After each answer, an Elo update in the engine moves both the rating and the question's learned difficulty, using the chance of guessing right (1/5, 1/9, 1/27 for 1–3 blanks; 1/15 for SE). Answers that used the hint count half.
 - **Separate stats.** Practice answers go into `attempts` but don't count toward the dashboard's vocabulary numbers.
 
 ## Placement check
 
 The placement check (`/placement`) has 20 adaptive questions. Each one asks you to pick a word's definition, with an "I don't know" option.
 
-- **Estimating your level.** The C++ engine (`engine/src/placement.cpp`) estimates ability θ with a one-parameter IRT model. The model assumes a 20% guessing floor and an N(0,1) prior, and averages over a grid of possible θ values (an EAP estimate). Each next word is the unseen word whose difficulty is closest to the current estimate.
+- **Estimating your level.** The engine (`vocab_engine/placement.py`) estimates ability θ with a one-parameter IRT model. The model assumes a 20% guessing floor and an N(0,1) prior, and averages over a grid of possible θ values (an EAP estimate). Each next word is the unseen word whose difficulty is closest to the current estimate.
 - **Word difficulty.** A word's difficulty is its tier prior (0 / 0.7 / 1.5) plus a learned offset (`Word.global_difficulty`). Every placement answer adjusts that offset with an Elo-style update.
 - **After the check.** Words you answered correctly become `placement` cards. They skip the learning steps and come back in 2 days for a recall check.
 - **Fast-tracking.** Later, a new word you're predicted to know with at least 75% probability becomes a `fast_track` card: no flashcard, straight to a recall question. Fast-tracked cards don't count toward the daily new-word limit but are capped at twice it.
@@ -114,11 +113,12 @@ The placement check (`/placement`) has 20 adaptive questions. Each one asks you 
 
 ## Word bank
 
-237 words in `backend/app/seed/vocab/`. The server validates and syncs the bank on startup: new words are added, changed entries are updated, and nothing is deleted.
+340 words in `backend/app/seed/vocab/`. The server validates and syncs the bank on startup: new words are added, changed entries are updated, and nothing is deleted.
 
-- **Frequency tiers.** Each word has a tier: 1 = high frequency (126 words), 2 = medium (100), 3 = advanced (11). New words are introduced high-frequency first.
+- **Frequency tiers.** Each word has a tier: 1 = high frequency (160 words), 2 = medium (156), 3 = advanced (24). New words are introduced high-frequency first.
 - **Where the tiers come from.** Words tagged `"freq_source": "magoosh_top20"` are Magoosh's public "Top 20 most tested GRE words"; all 20 are in the bank. Magoosh's Common/Basic/Advanced flashcard decks don't publish their word lists. The other tiers are editorial judgments to review.
 - **Clusters and families.** A cluster groups near-synonyms. A family groups clusters that are easy to confuse, such as *soothe* and *ease*. Quiz distractors never come from the target's own family, and no two options are listed synonyms of each other. As a result, every synonym-pair question has exactly one right pair.
+- **Common phrases.** Each word lists 2–4 phrases showing how it's most often used in real writing, such as *widely lauded* or *a false dichotomy*, never pairings that are merely grammatical. They appear on the word page and the back of the flashcard, and the AI tutor sees them too. Every phrase must contain the word itself or a regular inflection of it (*lauded*, *extolled*).
 - **Checks.** `validate_bank` in `app/seed/seed.py` enforces these rules. One example: a synonym that is itself a bank word must belong to the same family.
 
 ## Adding a section later
@@ -142,11 +142,11 @@ Set `GRE_AI_ENABLED=false` to run without credentials. Usage questions are then 
 
 ## Supabase (database) and Clerk (accounts)
 
-Both are wired in and switched on by configuration alone. Without them, the app runs on SQLite with dev users.
+Both are switched on by configuration alone. The backend runs on PostgreSQL only: Supabase normally, or Docker's local Postgres. Without Clerk, it runs with dev users.
 
 ### Supabase
 
-1. **Create a Supabase project.** Open **Connect** and copy the **Session pooler** connection string; it works over IPv4.
+1. **Create a Supabase project.** Open **Connect** and copy a connection string. **Direct connection** is IPv6-only: fine on a Mac with IPv6, but Docker and Vercel need the **Session pooler** string, which works over IPv4.
 2. **Point the backend at it.** In `backend/.env`, set:
 
    ```
@@ -159,7 +159,7 @@ Both are wired in and switched on by configuration alone. Without them, the app 
 Notes:
 - **Row-level security.** Migration `0002` enables RLS, with no policies, on every table. That blocks Supabase's auto-generated Data API (anyone with the anon key) from reading app data. The backend connects as the table owner, so RLS doesn't apply to it. All data access goes through FastAPI; the frontend never talks to Supabase directly.
 - **Changing models.** After editing `app/models.py`, run `alembic revision --autogenerate -m "..."` from `backend/`. The test `test_migrations_match_models` fails if you forget.
-- **Testing on Postgres.** `GRE_TEST_POSTGRES=1 .venv/bin/pytest` runs the whole suite on a throwaway local PostgreSQL 16 (the `pgserver` dev dependency).
+- **Tests.** `.venv/bin/pytest` runs on a throwaway local PostgreSQL (the `pgserver` dev dependency), never on Supabase. Set `GRE_TEST_DATABASE_URL` to use an existing empty database instead, e.g. a CI service container.
 
 ### Clerk
 

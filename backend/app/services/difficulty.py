@@ -2,8 +2,7 @@
 words a user very likely already knows."""
 from datetime import timedelta
 
-import vocab_engine as ve
-
+from app import vocab_engine as ve
 from app.models import Card, Word, utcnow
 
 # Starting difficulty by frequency tier; Word.global_difficulty is a learned

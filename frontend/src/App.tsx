@@ -1,13 +1,26 @@
+import { GraduationCap } from 'lucide-react'
 import { NavLink, Route, Routes } from 'react-router-dom'
+import { ErrorAlert } from '@/components/Status'
+import { cn } from '@/lib/utils'
 import { AccountButton, clerkEnabled } from './lib/auth'
 import { useConfig } from './lib/config'
 import Dashboard from './pages/Dashboard'
+import Home from './pages/Home'
 import Placement from './pages/Placement'
 import Practice from './pages/Practice'
 import Settings from './pages/Settings'
 import Study from './pages/Study'
 import WordPage from './pages/WordPage'
 import Words from './pages/Words'
+
+const NAV = [
+  { to: '/', label: 'Home', end: true },
+  { to: '/dashboard', label: 'Dashboard' },
+  { to: '/study', label: 'Vocab' },
+  { to: '/practice', label: 'Practice' },
+  { to: '/words', label: 'Words' },
+  { to: '/settings', label: 'Settings' },
+]
 
 export default function App() {
   const config = useConfig()
@@ -20,26 +33,41 @@ export default function App() {
       : null
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <NavLink to="/" className="brand">
-          GRE Prep
-        </NavLink>
-        <nav>
-          <NavLink to="/" end>
-            Dashboard
+    <div className="min-h-svh">
+      <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
+        {/* Phones: brand and account on one row, the nav scrolls on the row below. */}
+        <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-4 px-4 sm:h-14">
+          <NavLink to="/" className="flex h-12 items-center gap-2 font-semibold tracking-tight sm:h-auto">
+            <GraduationCap className="size-5" />
+            GRE Prep
           </NavLink>
-          <NavLink to="/study">Vocab</NavLink>
-          <NavLink to="/practice">Practice</NavLink>
-          <NavLink to="/words">Words</NavLink>
-          <NavLink to="/settings">Settings</NavLink>
-          <AccountButton />
-        </nav>
+          <nav className="order-last -mx-4 flex w-[calc(100%+2rem)] gap-1 overflow-x-auto px-3 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:order-none sm:mx-0 sm:w-auto sm:flex-1 sm:p-0">
+            {NAV.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) =>
+                  cn(
+                    'rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground',
+                    isActive && 'bg-accent text-foreground',
+                  )
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+          <div className="ml-auto flex items-center">
+            <AccountButton />
+          </div>
+        </div>
       </header>
-      {mismatch && <div className="panel error small">{mismatch}</div>}
-      <main>
+      <main className="mx-auto flex max-w-4xl flex-col gap-4 px-4 pt-6 pb-12">
+        {mismatch && <ErrorAlert>{mismatch}</ErrorAlert>}
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/study" element={<Study />} />
           <Route path="/placement" element={<Placement />} />
           <Route path="/practice" element={<Practice />} />

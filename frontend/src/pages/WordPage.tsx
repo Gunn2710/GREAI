@@ -1,5 +1,10 @@
+import { ArrowLeft, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { ErrorAlert, LoadingCard } from '@/components/Status'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { CardStats } from '../components/Comfort'
 import { TutorChat } from '../components/TutorChat'
 import { WordCard } from '../components/WordCard'
@@ -33,43 +38,71 @@ export default function WordPage() {
     }
   }
 
-  if (!data) return <div className="panel muted">{error ?? 'Loading…'}</div>
+  if (!data) return error ? <ErrorAlert>{error}</ErrorAlert> : <LoadingCard />
   const { word, card } = data
 
   return (
-    <div className="word-page">
-      <Link to="/words" className="small">
-        ← All words
-      </Link>
-      <div className="two-col">
-        <div className="panel">
-          <WordCard word={word} />
-          {ai_enabled && (
-            <div className="mnemonic">
-              {mnemonic ? (
-                <p>
-                  <b>Mnemonic:</b> {mnemonic}
-                </p>
+    <div className="flex flex-col gap-4">
+      <div>
+        <Button variant="ghost" size="sm" className="-ml-3 text-muted-foreground" asChild>
+          <Link to="/words">
+            <ArrowLeft />
+            All words
+          </Link>
+        </Button>
+      </div>
+      <div className="grid items-start gap-4 md:grid-cols-[3fr_2fr]">
+        <Card>
+          <CardContent className="flex flex-col gap-4">
+            <WordCard word={word} />
+            {ai_enabled &&
+              (mnemonic ? (
+                <Alert>
+                  <Sparkles />
+                  <AlertDescription className="text-foreground">
+                    <p>
+                      <b className="font-semibold">Mnemonic:</b> {mnemonic}
+                    </p>
+                  </AlertDescription>
+                </Alert>
               ) : (
-                <button onClick={makeMnemonic} disabled={mnemonicBusy}>
-                  {mnemonicBusy ? 'Thinking…' : 'Give me a mnemonic'}
-                </button>
-              )}
-            </div>
-          )}
-          {error && <p className="error">{error}</p>}
-        </div>
-        <div className="panel">
-          <h3>Your comfort</h3>
-          {card && card.tier !== 'new' ? <CardStats card={card} /> : <p className="muted">You haven't studied this word yet.</p>}
-        </div>
+                <div>
+                  <Button variant="outline" onClick={makeMnemonic} disabled={mnemonicBusy}>
+                    <Sparkles />
+                    {mnemonicBusy ? 'Thinking…' : 'Give me a mnemonic'}
+                  </Button>
+                </div>
+              ))}
+            {error && <ErrorAlert>{error}</ErrorAlert>}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Your comfort</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {card && card.tier !== 'new' ? (
+              <CardStats card={card} />
+            ) : (
+              <p className="text-sm text-muted-foreground">You haven't studied this word yet.</p>
+            )}
+          </CardContent>
+        </Card>
       </div>
       {ai_enabled ? (
-        <div className="panel">
-          <TutorChat wordId={word.id} lemma={word.lemma} />
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Tutor</CardTitle>
+            <CardDescription>Ask anything about “{word.lemma}”.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TutorChat wordId={word.id} lemma={word.lemma} />
+          </CardContent>
+        </Card>
       ) : (
-        <p className="muted small">The AI tutor is off. Set GRE_AI_ENABLED=true and add Claude credentials on the server.</p>
+        <p className="px-1 text-xs text-muted-foreground">
+          The AI tutor is off. Set GRE_AI_ENABLED=true and add Claude credentials on the server.
+        </p>
       )}
     </div>
   )

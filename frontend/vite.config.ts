@@ -1,9 +1,14 @@
-import { defineConfig } from 'vite'
+import path from 'node:path'
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
 
 // The FastAPI backend runs on :8000; proxying keeps the browser same-origin in dev.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: { '@': path.resolve(__dirname, './src') },
+  },
   server: {
     proxy: {
       // GRE_API_TARGET lets a second dev stack point at another backend port.

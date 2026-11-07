@@ -10,11 +10,11 @@ import random
 import uuid
 from datetime import timedelta
 
-import vocab_engine as ve
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import vocab_engine as ve
 from app.items import verbal  # noqa: F401  (registers tc / se)
 from app.items.base import get_item_type
 from app.models import Attempt, IssuedItem, Item, UserParams, UserSkill, utcnow
@@ -63,8 +63,7 @@ def _pick(db: Session, user_id: str, kind: str, rating: float) -> Item:
     cutoff = utcnow() - timedelta(days=RECENT_DAYS)
 
     def seen_at(item: Item):
-        ts = last_seen.get(item.id)
-        return ts.replace(tzinfo=cutoff.tzinfo) if ts is not None and ts.tzinfo is None else ts
+        return last_seen.get(item.id)
 
     unseen = [i for i in items if seen_at(i) is None]
     pool = unseen or [i for i in items if seen_at(i) < cutoff]

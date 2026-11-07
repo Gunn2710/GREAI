@@ -53,6 +53,7 @@ def word_entry(word: Word) -> str:
             "part_of_speech": word.pos,
             "definition": word.definition,
             "nuance": word.nuance,
+            "common_phrases": word.phrases,
             "examples": word.examples,
             "synonyms": word.synonyms,
             "antonyms": word.antonyms,

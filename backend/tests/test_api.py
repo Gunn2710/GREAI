@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.items.base import get_item_type
 from app.items.vocab import related
 from app.models import Card, Confusion, IssuedItem, Word, utcnow
-from app.seed.seed import load_bank, sync_bank, validate_bank
+from app.seed.seed import TOP_SOURCE, assign_sets, load_bank, sync_bank, validate_bank
 from app.services import ai
 
 BANK_META, BANK_WORDS = load_bank()
@@ -67,6 +67,7 @@ def test_new_word_flow(client, db):
     assert item["item_type"] == "flashcard"
     assert "back" in item["payload"]
     assert item["payload"]["pronunciation"] and item["payload"]["back"]["pronunciation"]
+    assert len(item["payload"]["back"]["phrases"]) == 3
     assert "answer" not in item
 
     out = client.post(
@@ -203,6 +204,7 @@ def test_word_endpoints(client):
     detail = client.get(f"/api/words/{words[0]['id']}", headers=headers("alice")).json()
     assert detail["word"]["synonyms"]
     assert detail["word"]["pronunciation"] == "luh-KAH-nik"
+    assert detail["word"]["phrases"] == ["laconic reply", "laconic style", "laconic wit"]
     tutor = client.post(
         f"/api/words/{words[0]['id']}/tutor",
         json={"messages": [{"role": "user", "content": "hi"}]},
@@ -216,6 +218,16 @@ def test_bank_is_valid():
     sources = {w.get("freq_source") for w in BANK_WORDS}
     assert sum(w.get("freq_source") == "magoosh_top20" for w in BANK_WORDS) == 20
     assert sources <= {None, "editorial", "magoosh_top20"}
+
+
+def test_phrases_must_use_the_word():
+    laud = next(w for w in BANK_WORDS if w["lemma"] == "laud")
+    extol = next(w for w in BANK_WORDS if w["lemma"] == "extol")
+    # Inflections count ("lauded", "extolled"); other words and derivations don't.
+    assert any("lauded" in p for p in laud["phrases"]) and any("extolled" in p for p in extol["phrases"])
+    for bad in (["praise someone highly", "laud the team"], ["a laudable effort", "laud the team"], ["laud the team"]):
+        words = [{**w, "phrases": bad} if w is laud else w for w in BANK_WORDS]
+        assert validate_bank(BANK_META, words) == ["laud: needs 2-4 common phrases that each use the word"]
 
 
 def test_sync_is_idempotent_and_updates(client, db):
@@ -233,3 +245,51 @@ def test_new_words_start_with_high_frequency(client, db):
     res = client.get("/api/study/next", headers=h).json()
     item = db.get(IssuedItem, res["item"]["id"])
     assert db.get(Word, item.word_id).tier == 1
+
+
+def test_bank_splits_into_sets_most_common_first():
+    sets = assign_sets(BANK_WORDS)
+    assert set(sets) == {w["lemma"] for w in BANK_WORDS}
+    tier = {w["lemma"]: w["tier"] for w in BANK_WORDS}
+    members: dict[int, list[str]] = {}
+    for lemma, (number, _) in sets.items():
+        members.setdefault(number, []).append(lemma)
+    assert sorted(members) == list(range(1, len(members) + 1))
+    assert all(20 <= len(m) <= 30 for m in members.values())
+    # Sets never mix tiers, and tiers only go up through the progression.
+    tiers = [{tier[lemma] for lemma in members[n]} for n in sorted(members)]
+    assert all(len(t) == 1 for t in tiers)
+    assert [t.pop() for t in tiers] == sorted(tier[members[n][0]] for n in members)
+    # The most-tested words open the first set.
+    top = {w["lemma"] for w in BANK_WORDS if w.get("freq_source") == TOP_SOURCE}
+    assert top <= set(members[1])
+    # Ranks give one total order that agrees with the set numbers.
+    ranked = sorted(sets.values(), key=lambda v: v[1])
+    assert [r for _, r in ranked] == list(range(1, len(sets) + 1))
+    assert [n for n, _ in ranked] == sorted(n for n, _ in ranked)
+
+
+def test_new_words_come_from_the_current_set(client, db):
+    h = headers("grace")
+    client.put("/api/me/profile", json={"daily_new_words": 3}, headers=h)
+    data = client.get("/api/sets", headers=h).json()
+    assert data["current"] == 1
+    assert [s["status"] for s in data["sets"][:2]] == ["current", "locked"]
+    assert data["sets"][0]["started"] == 0
+
+    res = client.get("/api/study/next", headers=h).json()
+    assert res["set"]["number"] == 1 and res["set"]["total"] == len(data["sets"])
+    item = db.get(IssuedItem, res["item"]["id"])
+    first = db.scalar(select(Word).order_by(Word.set_rank).limit(1))
+    assert item.word_id == first.id
+
+    # Placing the rest of set 1 moves the progression on to set 2.
+    for word in db.scalars(select(Word).where(Word.set_no == 1, Word.id != first.id)):
+        db.add(Card(user_id="grace", word_id=word.id, origin="placement", reps=1, state=2,
+                    stability=30.0, difficulty=4.0, depth=3, last_review=utcnow(),
+                    due=utcnow() + timedelta(days=20), created_at=utcnow() - timedelta(days=2)))
+    db.commit()
+    data = client.get("/api/sets", headers=h).json()
+    assert data["current"] == 2
+    assert data["sets"][0]["status"] in ("reviewing", "done")
+    assert client.get("/api/stats", headers=h).json()["sets"]["current"]["number"] == 2
