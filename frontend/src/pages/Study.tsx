@@ -84,7 +84,7 @@ export default function Study() {
           </p>
           <div className="row center">
             <button onClick={loadNext}>Check again</button>
-            <Link to="/" className="button primary">
+            <Link to="/dashboard" className="button primary">
               Back to dashboard
             </Link>
           </div>

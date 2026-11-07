@@ -6,7 +6,7 @@
 - [ ] Use Supabase's Session pooler string for Docker and Vercel (direct connection is IPv6-only)
 - [x] Add phrases to each word: always the most common way the word is actually used (e.g. "widely lauded", "laud someone for something"), not made-up combos
 - [ ] More example sentences per word (3–4, different contexts)
-- [ ] Home page (with different sections)
+- [x] Home page (with different sections)
 - [ ] Clerk production instance
 - [ ] Limit Claude usage per user
 - [ ] Grow the word bank

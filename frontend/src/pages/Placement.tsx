@@ -143,7 +143,7 @@ export function PlacementSummary({ result }: { result: PlacementResult }) {
       )}
 
       <div className="row end">
-        <Link to="/" className="button">
+        <Link to="/dashboard" className="button">
           Dashboard
         </Link>
         <Link to="/study" className="button primary">

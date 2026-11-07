@@ -2,6 +2,7 @@ import { NavLink, Route, Routes } from 'react-router-dom'
 import { AccountButton, clerkEnabled } from './lib/auth'
 import { useConfig } from './lib/config'
 import Dashboard from './pages/Dashboard'
+import Home from './pages/Home'
 import Placement from './pages/Placement'
 import Practice from './pages/Practice'
 import Settings from './pages/Settings'
@@ -27,8 +28,9 @@ export default function App() {
         </NavLink>
         <nav>
           <NavLink to="/" end>
-            Dashboard
+            Home
           </NavLink>
+          <NavLink to="/dashboard">Dashboard</NavLink>
           <NavLink to="/study">Vocab</NavLink>
           <NavLink to="/practice">Practice</NavLink>
           <NavLink to="/words">Words</NavLink>
@@ -39,7 +41,8 @@ export default function App() {
       {mismatch && <div className="panel error small">{mismatch}</div>}
       <main>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/study" element={<Study />} />
           <Route path="/placement" element={<Placement />} />
           <Route path="/practice" element={<Practice />} />
