@@ -1,5 +1,9 @@
 import { SignIn, SignOutButton, UserButton, useAuth, useUser } from '@clerk/react'
+import { GraduationCap } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
+import { LoadingCard } from '@/components/Status'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { api, ApiError, setTokenProvider } from './api'
 
 /** Clerk is on when a publishable key is configured (frontend/.env). */
@@ -40,18 +44,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (!isLoaded || (isSignedIn && (access.userId !== userId || access.state === 'checking'))) {
     return (
-      <div className="app">
-        <div className="panel muted">Loading…</div>
+      <div className="mx-auto max-w-4xl px-4 py-6">
+        <LoadingCard />
       </div>
     )
   }
   if (!isSignedIn) {
     return (
-      <div className="auth-screen">
-        <h1>GRE Prep</h1>
-        <p className="muted">Sign in to keep your progress across devices.</p>
+      <AuthScreen>
+        <p className="text-sm text-muted-foreground">Sign in to keep your progress across devices.</p>
         <SignIn routing="hash" />
-      </div>
+      </AuthScreen>
     )
   }
   if (access.state === 'denied') return <NotApproved />
@@ -61,18 +64,33 @@ export function AuthGate({ children }: { children: ReactNode }) {
 function NotApproved() {
   const { user } = useUser()
   return (
-    <div className="auth-screen">
-      <h1>GRE Prep</h1>
-      <div className="panel center not-approved">
-        <h2>Access not approved</h2>
-        <p className="muted">
-          {user?.primaryEmailAddress?.emailAddress ?? 'This account'} isn't on the approved list for this app. Sign
-          in with an approved account, or ask the owner for access.
-        </p>
-        <SignOutButton>
-          <button className="primary">Sign out</button>
-        </SignOutButton>
-      </div>
+    <AuthScreen>
+      <Card className="w-full max-w-sm text-center">
+        <CardHeader>
+          <CardTitle className="text-lg">Access not approved</CardTitle>
+          <CardDescription>
+            {user?.primaryEmailAddress?.emailAddress ?? 'This account'} isn't on the approved list for this app. Sign
+            in with an approved account, or ask the owner for access.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SignOutButton>
+            <Button>Sign out</Button>
+          </SignOutButton>
+        </CardContent>
+      </Card>
+    </AuthScreen>
+  )
+}
+
+function AuthScreen({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex min-h-svh flex-col items-center justify-center gap-3 px-4 py-6">
+      <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+        <GraduationCap className="size-6" />
+        GRE Prep
+      </h1>
+      {children}
     </div>
   )
 }

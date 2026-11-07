@@ -1,5 +1,15 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { ArrowRight, Lightbulb, Sparkles, Square, SquareCheck } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { OptionButton, OptionResult, Verdict } from '@/components/Option'
+import { HintButton, ModeTag } from '@/components/Question'
+import { ErrorAlert, LoadingCard } from '@/components/Status'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 import { api, ApiError } from '../lib/api'
 import type { PracticeItem, PracticeKind, PracticeResult, PracticeSummary } from '../lib/types'
 
@@ -9,6 +19,8 @@ const KINDS: { kind: PracticeKind; label: string }[] = [
   { kind: 'se', label: 'Sentence Equivalence' },
 ]
 const ROMAN = ['i', 'ii', 'iii']
+/** Answer columns side by side for 2-3 blanks, stacked on phones. */
+const BLANK_COLUMNS: Record<number, string> = { 1: '', 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3' }
 
 /** Same bands as the placement level. */
 function levelLabel(rating: number): string {
@@ -55,36 +67,42 @@ export default function Practice() {
   }, [phase.kind, kind, loadNext])
 
   return (
-    <div className="study practice">
-      <div className="filters" role="group" aria-label="Question type">
-        {KINDS.map((k) => (
-          <button key={k.kind} className={kind === k.kind ? 'on' : ''} onClick={() => setKind(k.kind)}>
-            {k.label}
-          </button>
-        ))}
-      </div>
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+      <Tabs value={kind} onValueChange={(v) => setKind(v as PracticeKind)}>
+        <TabsList className="w-full sm:w-fit" aria-label="Question type">
+          {KINDS.map((k) => (
+            <TabsTrigger key={k.kind} value={k.kind} className="sm:px-3">
+              {k.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {summary && (
-        <div className="practice-summary">
+        <div className="grid grid-cols-2 gap-4">
           {(['tc', 'se'] as const).map((k) => (
-            <div key={k} className="panel tile">
-              <div className="muted small">{summary[k].name}</div>
-              <div className="tile-value">{summary[k].rating == null ? '–' : levelLabel(summary[k].rating!)}</div>
-              <div className="muted small">
+            <Card key={k} className="gap-1 px-4 py-4">
+              <div className="text-xs text-muted-foreground">{summary[k].name}</div>
+              <div className="text-2xl font-semibold tracking-tight">
+                {summary[k].rating == null ? '–' : levelLabel(summary[k].rating!)}
+              </div>
+              <div className="text-xs text-muted-foreground">
                 {summary[k].attempts
                   ? `${summary[k].attempts} answered · ${Math.round((summary[k].accuracy ?? 0) * 100)}% correct`
                   : `${summary[k].questions} questions`}
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
 
-      {phase.kind === 'loading' && <div className="panel muted">Loading…</div>}
+      {phase.kind === 'loading' && <LoadingCard />}
       {phase.kind === 'error' && (
-        <div className="panel">
-          <p className="error">{phase.message}</p>
-          <button onClick={() => loadNext(kind)}>Try again</button>
+        <div className="flex flex-col items-start gap-3">
+          <ErrorAlert>{phase.message}</ErrorAlert>
+          <Button variant="outline" onClick={() => loadNext(kind)}>
+            Try again
+          </Button>
         </div>
       )}
       {phase.kind === 'question' && (
@@ -104,13 +122,19 @@ export default function Practice() {
 function Passage({ text, fills, multi }: { text: string; fills: (string | null)[]; multi: boolean }) {
   const parts = text.split(/\{(\d)\}/)
   return (
-    <p className="passage">
+    <p className="text-lg leading-8">
       {parts.map((part, i) => {
         if (i % 2 === 0) return <Fragment key={i}>{part}</Fragment>
         const n = Number(part) - 1
         return (
-          <span key={i} className={`blank ${fills[n] ? 'filled' : ''}`}>
-            {multi && <sup>({ROMAN[n]})</sup>}
+          <span
+            key={i}
+            className={cn(
+              'inline-block min-w-24 border-b-2 px-1 text-center',
+              fills[n] ? 'border-primary font-semibold' : 'border-muted-foreground/50',
+            )}
+          >
+            {multi && <sup className="mr-0.5 font-normal text-muted-foreground">({ROMAN[n]})</sup>}
             {fills[n] ?? ' '.repeat(12)}
           </span>
         )
@@ -163,72 +187,85 @@ function Question({
   }
 
   return (
-    <div className="panel question">
-      <div className="row space">
-        <div className="mode-tag">
+    <Card>
+      <CardContent className="flex flex-col gap-4">
+        <ModeTag>
           {item.kind_name}
           {isTc && blanks.length > 1 && ` · ${blanks.length} blanks`} · {item.payload.difficulty}
-        </div>
-      </div>
-      <Passage text={item.payload.text} fills={fills} multi={blanks.length > 1} />
+        </ModeTag>
+        <Passage text={item.payload.text} fills={fills} multi={blanks.length > 1} />
 
-      {isTc ? (
-        <>
-          {blanks.length === 1 && <p className="muted small">Choose the word that best completes the text.</p>}
-          {blanks.length > 1 && (
-            <p className="muted small">Choose one entry for each blank. All blanks must be right to get credit.</p>
-          )}
-          <div className={`blank-columns cols-${blanks.length}`}>
-            {blanks.map((opts, b) => (
-              <div key={b} className="blank-column">
-                {blanks.length > 1 && <div className="column-head">Blank ({ROMAN[b]})</div>}
-                {opts.map((opt, o) => (
-                  <button
+        {isTc ? (
+          <>
+            <p className="text-sm text-muted-foreground">
+              {blanks.length === 1
+                ? 'Choose the word that best completes the text.'
+                : 'Choose one entry for each blank. All blanks must be right to get credit.'}
+            </p>
+            <div className={cn('grid gap-3', BLANK_COLUMNS[blanks.length])}>
+              {blanks.map((opts, b) => (
+                <div key={b} className="flex flex-col gap-2">
+                  {blanks.length > 1 && <ColumnHead>Blank ({ROMAN[b]})</ColumnHead>}
+                  {opts.map((opt, o) => (
+                    <OptionButton
+                      key={o}
+                      state={selected[b] === o ? 'selected' : 'idle'}
+                      disabled={busy}
+                      onClick={() => pickTc(b, o)}
+                    >
+                      {opt}
+                    </OptionButton>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground">
+              Select the <b className="font-semibold text-foreground">two</b> answers that each complete the sentence and
+              produce sentences alike in meaning.
+            </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {item.payload.options!.map((opt, o) => {
+                const on = selected.includes(o)
+                const Box = on ? SquareCheck : Square
+                return (
+                  <OptionButton
                     key={o}
-                    className={`option ${selected[b] === o ? 'selected' : ''}`}
+                    state={on ? 'selected' : 'idle'}
                     disabled={busy}
-                    onClick={() => pickTc(b, o)}
+                    onClick={() => toggleSe(o)}
+                    aria-pressed={on}
                   >
+                    <Box className={cn('size-4 shrink-0', on ? 'text-primary' : 'text-muted-foreground')} />
                     {opt}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="muted small">
-            Select the <b>two</b> answers that each complete the sentence and produce sentences alike in meaning.
-          </p>
-          <div className="options grid">
-            {item.payload.options!.map((opt, o) => (
-              <button
-                key={o}
-                className={`option ${selected.includes(o) ? 'selected' : ''}`}
-                disabled={busy}
-                onClick={() => toggleSe(o)}
-                aria-pressed={selected.includes(o)}
-              >
-                <span className="checkbox">{selected.includes(o) ? '☑' : '☐'}</span>
-                {opt}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+                  </OptionButton>
+                )
+              })}
+            </div>
+          </>
+        )}
 
-      {clue && <p className="clue">Clue: {clue}</p>}
-      <div className="row space">
-        <button className="link" disabled={!!clue || busy} onClick={hint}>
-          {clue ? 'Hint used' : 'Hint'}
-        </button>
-        <button className="primary" disabled={!complete || busy} onClick={submit}>
-          Check answer
-        </button>
-      </div>
-    </div>
+        {clue && (
+          <Alert>
+            <Lightbulb />
+            <AlertDescription className="text-foreground">Clue: {clue}</AlertDescription>
+          </Alert>
+        )}
+        <div className="flex items-center justify-between gap-2">
+          <HintButton used={!!clue} disabled={busy} onHint={hint} />
+          <Button disabled={!complete || busy} onClick={submit}>
+            Check answer
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
+}
+
+function ColumnHead({ children }: { children: ReactNode }) {
+  return <div className="text-center text-xs text-muted-foreground">{children}</div>
 }
 
 function Result({
@@ -248,72 +285,75 @@ function Result({
   const delta = result.rating_after - result.rating_before
 
   return (
-    <div className="panel">
-      <div className={`verdict ${result.correct ? 'ok' : 'bad'}`}>{result.correct ? 'Correct' : 'Not quite'}</div>
-      <p className="passage">{result.feedback.filled_text}</p>
+    <Card>
+      <CardContent className="flex flex-col gap-4">
+        <Verdict ok={result.correct}>{result.correct ? 'Correct' : 'Not quite'}</Verdict>
+        <p className="text-lg leading-8">{result.feedback.filled_text}</p>
 
-      {isTc ? (
-        <div className={`blank-columns cols-${blanks.length}`}>
-          {blanks.map((opts, b) => (
-            <div key={b} className="blank-column">
-              {blanks.length > 1 && <div className="column-head">Blank ({ROMAN[b]})</div>}
-              {opts.map((opt, o) => (
-                <div
-                  key={o}
-                  className={`option static ${correct[b] === o ? 'correct' : selected[b] === o ? 'wrong' : ''}`}
-                >
-                  {opt}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="options grid">
-          {item.payload.options!.map((opt, o) => (
-            <div
-              key={o}
-              className={`option static ${correct.includes(o) ? 'correct' : selected.includes(o) ? 'wrong' : ''}`}
-            >
-              {opt}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="ai-feedback">
-        <p>{result.feedback.explanation}</p>
-      </div>
-
-      <div className="row space small">
-        <span>
-          {item.kind_name}: {levelLabel(result.rating_after)}{' '}
-          <span className={delta >= 0 ? 'up' : 'down'}>
-            ({delta >= 0 ? '+' : ''}
-            {delta.toFixed(2)})
-          </span>
-        </span>
-        <span className="muted">Difficulty: {result.difficulty}</span>
-      </div>
-
-      {result.feedback.words.length > 0 && (
-        <div className="vocab-links">
-          <span className="muted small">Vocabulary in this question:</span>
-          <div className="chips">
-            {result.feedback.words.map((w) => (
-              <Link key={w.id} to={`/words/${w.id}`} className="chip button" title={w.definition}>
-                {w.lemma}
-              </Link>
+        {isTc ? (
+          <div className={cn('grid gap-3', BLANK_COLUMNS[blanks.length])}>
+            {blanks.map((opts, b) => (
+              <div key={b} className="flex flex-col gap-2">
+                {blanks.length > 1 && <ColumnHead>Blank ({ROMAN[b]})</ColumnHead>}
+                {opts.map((opt, o) => (
+                  <OptionResult key={o} state={correct[b] === o ? 'correct' : selected[b] === o ? 'wrong' : 'idle'}>
+                    {opt}
+                  </OptionResult>
+                ))}
+              </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {item.payload.options!.map((opt, o) => (
+              <OptionResult key={o} state={correct.includes(o) ? 'correct' : selected.includes(o) ? 'wrong' : 'idle'}>
+                {opt}
+              </OptionResult>
+            ))}
+          </div>
+        )}
 
-      <div className="row end">
-        <button className="primary" onClick={onNext} autoFocus>
-          Next (Enter)
-        </button>
-      </div>
-    </div>
+        <Alert>
+          <Sparkles />
+          <AlertDescription className="text-foreground">
+            <p>{result.feedback.explanation}</p>
+          </AlertDescription>
+        </Alert>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span>
+            {item.kind_name}: <b className="font-semibold">{levelLabel(result.rating_after)}</b>{' '}
+            <span className={cn('tabular-nums', delta >= 0 ? 'text-success' : 'text-destructive')}>
+              ({delta >= 0 ? '+' : ''}
+              {delta.toFixed(2)})
+            </span>
+          </span>
+          <span className="text-muted-foreground">Difficulty: {result.difficulty}</span>
+        </div>
+
+        {result.feedback.words.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <span className="text-xs text-muted-foreground">Vocabulary in this question</span>
+            <div className="flex flex-wrap gap-1.5">
+              {result.feedback.words.map((w) => (
+                <Badge key={w.id} variant="outline" className="px-2.5 py-1 text-sm font-normal" asChild>
+                  <Link to={`/words/${w.id}`} title={w.definition}>
+                    {w.lemma}
+                  </Link>
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-end">
+          <Button onClick={onNext} autoFocus>
+            Next
+            <kbd className="font-sans text-xs opacity-60">Enter</kbd>
+            <ArrowRight />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }

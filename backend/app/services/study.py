@@ -15,6 +15,7 @@ from app.items.base import get_item_type
 from app.models import Attempt, Card, Confusion, IssuedItem, Profile, UserParams, Word, utcnow
 from app.services.ai import claude
 from app.services.difficulty import FAST_TRACK_P, known_card, word_difficulty
+from app.services.sets import current_set
 
 # If a mode can't be built for a word (e.g. no example sentence for cloze),
 # fall back to the next mode down the ladder.
@@ -36,6 +37,7 @@ def word_detail(word: Word) -> dict:
         "confusables": word.confusables,
         "cluster": word.cluster,
         "tier": word.tier,
+        "set": word.set_no,
     }
 
 
@@ -95,7 +97,7 @@ def _pick_due_card(db: Session, user_id: str, now: float) -> Card | None:
 
 
 def _start_new_card(db: Session, user_id: str) -> Card | None:
-    """Introduce the next unseen word, most frequent first.
+    """Introduce the next unseen word in study-set order (most common first).
 
     If the user's placement level says they very likely know it, it is
     fast-tracked: no flashcard, straight to a recall check. Fast-tracked words
@@ -104,7 +106,8 @@ def _start_new_card(db: Session, user_id: str) -> Card | None:
     profile = get_profile(db, user_id)
     seen = select(Card.word_id).where(Card.user_id == user_id)
     word = db.scalar(
-        select(Word).where(Word.id.not_in(seen)).order_by(Word.tier, Word.id).limit(1)
+        select(Word).where(Word.id.not_in(seen))
+        .order_by(Word.set_rank.asc().nulls_last(), Word.tier, Word.id).limit(1)
     )
     if word is None:
         return None
@@ -135,6 +138,7 @@ def _client_item(item: IssuedItem) -> dict:
 
 def next_item(db: Session, user_id: str) -> dict:
     now = eb.now_days()
+    progress = current_set(db, user_id)  # before this item, which may start a new word
     card = _pick_due_card(db, user_id, now) or _start_new_card(db, user_id)
     if card is None:
         next_due = db.scalar(select(func.min(Card.due)).where(Card.user_id == user_id))
@@ -170,6 +174,7 @@ def next_item(db: Session, user_id: str) -> dict:
         "is_new_word": card.reps == 0,
         "likely_known": card.reps == 1 and card.origin in ("placement", "fast_track"),
         "card": eb.card_summary(card, now),
+        "set": progress,
     }
 
 

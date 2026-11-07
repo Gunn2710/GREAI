@@ -12,6 +12,7 @@ import type {
   PracticeResult,
   PracticeSummary,
   Profile,
+  SetsResponse,
   Stats,
   WordDetail,
   WordListEntry,
@@ -111,6 +112,7 @@ export const api = {
     post<PracticeResult>(`/practice/items/${itemId}/answer`, { response, response_ms: Math.round(responseMs) }),
   practiceSummary: () => request<PracticeSummary>('/practice/summary'),
   placementLatest: () => request<{ result: PlacementResult | null }>('/placement/latest'),
+  sets: () => request<SetsResponse>('/sets'),
   words: (search?: string) =>
     request<WordListEntry[]>(`/words${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   word: (id: number) => request<{ word: WordDetail; card: CardSummary | null }>(`/words/${id}`),

@@ -7,10 +7,15 @@ Clusters group near-synonyms. Families group clusters whose meanings are close
 enough to be confused (e.g. "soothe" and "ease"); quiz distractors never come
 from the target's own family. Syncing is idempotent: new words are inserted,
 existing ones (matched by lemma) are updated, and nothing is deleted.
+
+Words are split into study sets of 20-30 (see assign_sets): the most common
+words first, so working through the sets in order is the progression.
 """
+import hashlib
 import json
 import logging
 import re
+from collections import defaultdict
 from pathlib import Path
 
 from sqlalchemy import select
@@ -127,6 +132,62 @@ def validate_bank(meta: dict, words: list[dict]) -> list[str]:
     return problems
 
 
+SET_SIZE = 25  # target; every set gets 20-30 words when its tier has enough
+MAX_SET_SIZE = 30
+TOP_SOURCE = "magoosh_top20"  # the most-tested words open the first set
+
+
+def _stable_key(text: str) -> str:
+    """A fixed pseudo-random order, the same on every machine and every sync."""
+    return hashlib.sha1(text.encode()).hexdigest()
+
+
+def _study_order(words: list[dict]) -> list[dict]:
+    """The most-tested words first, then the rest with each cluster's words
+    spread evenly through the order, so near-synonyms land in different sets
+    (they are harder to learn together)."""
+    top = sorted((w for w in words if w.get("freq_source") == TOP_SOURCE), key=lambda w: _stable_key(w["lemma"]))
+    by_cluster: dict[str, list[dict]] = defaultdict(list)
+    for w in words:
+        if w.get("freq_source") != TOP_SOURCE:
+            by_cluster[w["cluster"]].append(w)
+    placed = []
+    for cluster, ws in by_cluster.items():
+        offset = int(_stable_key(cluster)[:8], 16) / 16**8  # where in its slot the cluster starts
+        for j, w in enumerate(sorted(ws, key=lambda w: _stable_key(w["lemma"]))):
+            placed.append(((j + offset) / len(ws), _stable_key(w["lemma"]), w))
+    return top + [w for *_, w in sorted(placed, key=lambda x: x[:2])]
+
+
+def _set_count(n: int) -> int:
+    if n == 0:
+        return 0
+    count = max(1, round(n / SET_SIZE))
+    while n / count > MAX_SET_SIZE:
+        count += 1
+    return count
+
+
+def assign_sets(words: list[dict]) -> dict[str, tuple[int, int]]:
+    """lemma -> (set number, rank in the whole study order). Sets never mix
+    frequency tiers; each tier is split into near-equal sets of about 25."""
+    by_tier: dict[int, list[dict]] = defaultdict(list)
+    for w in words:
+        by_tier[w["tier"]].append(w)
+    out: dict[str, tuple[int, int]] = {}
+    set_no = rank = 0
+    for tier in sorted(by_tier):
+        ordered = _study_order(by_tier[tier])
+        count = _set_count(len(ordered))
+        for i in range(count):
+            set_no += 1
+            chunk = ordered[round(i * len(ordered) / count):round((i + 1) * len(ordered) / count)]
+            for w in chunk:
+                rank += 1
+                out[w["lemma"]] = (set_no, rank)
+    return out
+
+
 def _upsert_skill(db: Session, sid: str, section: str, parent: str | None, name: str) -> None:
     skill = db.get(Skill, sid)
     if skill is None:
@@ -153,11 +214,13 @@ def sync_bank(db: Session, directory: Path = VOCAB_DIR) -> dict:
     db.flush()
 
     existing = {w.lemma: w for w in db.scalars(select(Word))}
+    sets = assign_sets(words)
     added = updated = 0
     for entry in words:
         values = {f: entry.get(f) for f in WORD_FIELDS}
         values["nuance"] = values["nuance"] or None
         values["skill_id"] = f"{VOCAB_ROOT}.{entry['cluster']}"
+        values["set_no"], values["set_rank"] = sets[entry["lemma"]]
         row = existing.get(entry["lemma"])
         if row is None:
             db.add(Word(lemma=entry["lemma"], **values))

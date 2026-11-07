@@ -9,7 +9,7 @@ from app.auth import current_user_id
 from app.config import get_settings
 from app.db import get_db
 from app.models import Word
-from app.services import placement, practice, stats, study
+from app.services import placement, practice, sets, stats, study
 from app.services.ai import claude
 
 router = APIRouter(prefix="/api")
@@ -142,6 +142,11 @@ def placement_latest(user_id: str = Depends(current_user_id), db: Session = Depe
 
 
 # ---- words ------------------------------------------------------------------
+
+@router.get("/sets")
+def word_sets(user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
+    return sets.word_sets(db, user_id)
+
 
 @router.get("/words")
 def words(search: str | None = None, user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):

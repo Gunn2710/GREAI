@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import engine_bridge as eb
 from app.models import Attempt, Card, Word, utcnow
+from app.services.sets import word_sets
 from app.services.study import get_profile, new_words_started_today, start_of_today, word_detail
 
 TIERS = ["new", "learning", "shaky", "comfortable", "mastered"]
@@ -79,8 +80,14 @@ def dashboard(db: Session, user_id: str) -> dict:
     new_left = max(0, min(profile.daily_new_words - new_words_started_today(db, user_id),
                           total_words - len(cards)))
 
+    sets = word_sets(db, user_id)
     return {
         "total_words": total_words,
+        "sets": {
+            "total": len(sets["sets"]),
+            "done": sum(s["status"] == "done" for s in sets["sets"]),
+            "current": next((s for s in sets["sets"] if s["number"] == sets["current"]), None),
+        },
         "tiers": {t: tiers.get(t, 0) for t in TIERS},
         "depth": {d: depth.get(d, 0) for d in eb.DEPTH_NAMES},
         "due_now": due_now,
@@ -110,7 +117,7 @@ def word_list(db: Session, user_id: str, search: str | None = None) -> list[dict
             "recall_probability": None, "due": None, "reps": 0, "lapses": 0,
         }
         out.append({
-            "id": word.id, "lemma": word.lemma, "pos": word.pos, "tier": word.tier,
+            "id": word.id, "lemma": word.lemma, "pos": word.pos, "tier": word.tier, "set": word.set_no,
             "definition": word.definition, "cluster": word.cluster, "card": summary,
         })
     return out

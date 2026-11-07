@@ -7,7 +7,8 @@ built to add Quant and Writing later.
 ```
 backend/    FastAPI (Python): API, item types, study loop, Claude integration
             app/vocab_engine/: FSRS-5 scheduler, word-comfort model, placement scoring
-frontend/   React + TypeScript + Vite
+frontend/   React + TypeScript + Vite, styled with Tailwind CSS and shadcn/ui
+            src/components/ui/: shadcn components (add more with `npx shadcn@latest add <name>`)
 ```
 
 ## Run it with Docker
