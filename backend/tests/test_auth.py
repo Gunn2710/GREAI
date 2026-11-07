@@ -148,14 +148,14 @@ def test_list_is_ignored_in_dev_mode(client, monkeypatch):
 
 
 SAFE = dict(
-    database_url="postgresql://u:p@db.example.test/postgres", auth_mode="clerk",
+    auth_mode="clerk",
     clerk_jwks_url=JWKS_URL, clerk_issuer=ISSUER, allowed_emails=["me@example.test"],
 )
 
 
 def test_default_auth_mode_is_clerk(monkeypatch):
     monkeypatch.delenv("GRE_AUTH_MODE", raising=False)
-    assert Settings(_env_file=None, database_url=SAFE["database_url"]).auth_mode == "clerk"
+    assert Settings(_env_file=None).auth_mode == "clerk"
 
 
 @pytest.mark.parametrize("unsafe", [

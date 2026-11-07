@@ -12,7 +12,7 @@ else:
 
     _pg = pgserver.get_server(tempfile.mkdtemp(), cleanup_mode="stop")
     os.environ["GRE_DATABASE_URL"] = _pg.get_uri()
-os.environ["GRE_ENV_FILE"] = ""  # ignore the developer's backend/.env
+os.environ["GRE_ENV_FILE"] = ""  # ignore the developer's .env
 os.environ["GRE_AI_ENABLED"] = "false"
 os.environ["GRE_AUTH_MODE"] = "dev"
 

@@ -1,16 +1,17 @@
+"""Ordinary settings (GRE_*). Secrets (database URL, API keys) are in
+app/secrets_config.py; both read the same root .env."""
 import os
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import field_validator, model_validator
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.secrets_config import ROOT_ENV_FILE, env_file
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="GRE_", extra="ignore")
-
-    # PostgreSQL connection string: Supabase in practice ("postgresql://...").
-    database_url: str
+    model_config = SettingsConfigDict(env_file=ROOT_ENV_FILE, env_prefix="GRE_", extra="ignore")
 
     # "dev": the user id comes from the X-Dev-User header (default "dev-user").
     # Anyone can claim any user, so it is for local use only and must be
@@ -26,7 +27,7 @@ class Settings(BaseSettings):
     # e.g. GRE_ALLOWED_EMAILS=["you@example.com"]
     allowed_emails: list[str] = []
 
-    # Claude. Credentials come from ANTHROPIC_API_KEY (or an `ant auth login` profile).
+    # Claude. The API key is a secret: see app/secrets_config.py.
     ai_enabled: bool = True
     claude_model: str = "claude-opus-5-5"
     claude_fallbacks: bool = True  # server-side refusal fallbacks
@@ -34,13 +35,6 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     default_daily_new_words: int = 10
     seed_on_startup: bool = True
-
-    @field_validator("database_url")
-    @classmethod
-    def _postgres_only(cls, url: str) -> str:
-        if not url.startswith(("postgres://", "postgresql://", "postgresql+psycopg://")):
-            raise ValueError("GRE_DATABASE_URL must be a PostgreSQL connection string (postgresql://...)")
-        return url
 
     @model_validator(mode="after")
     def _locked_down_on_vercel(self) -> "Settings":
@@ -67,7 +61,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    # GRE_ENV_FILE picks the settings file; empty disables it (the test suite
-    # does this so a developer's real .env can't change test results).
-    env_file = os.environ.get("GRE_ENV_FILE", ".env") or None
-    return Settings(_env_file=env_file)
+    return Settings(_env_file=env_file())

@@ -10,6 +10,7 @@ import anthropic
 from fastapi import HTTPException, status
 
 from app.config import get_settings
+from app.secrets_config import get_secrets
 from app.models import Word
 
 log = logging.getLogger(__name__)
@@ -80,7 +81,9 @@ class ClaudeService:
     @property
     def client(self) -> anthropic.AsyncAnthropic:
         if self._client is None:
-            self._client = anthropic.AsyncAnthropic()
+            key = get_secrets().anthropic_api_key
+            # No key here: the SDK falls back to the environment or an `ant auth login` profile.
+            self._client = anthropic.AsyncAnthropic(api_key=key.get_secret_value()) if key else anthropic.AsyncAnthropic()
         return self._client
 
     async def _complete(

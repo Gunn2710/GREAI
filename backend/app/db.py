@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from app.config import get_settings
+from app.secrets_config import get_secrets
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 BASELINE_REVISION = "0001"
@@ -30,7 +30,7 @@ def make_engine(url: str) -> Engine:
     return create_engine(normalize_url(url), connect_args={"prepare_threshold": None}, pool_pre_ping=True)
 
 
-engine = make_engine(get_settings().database_url)
+engine = make_engine(get_secrets().database_url.get_secret_value())
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 

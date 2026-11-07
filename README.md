@@ -14,7 +14,7 @@ frontend/   React + TypeScript + Vite, styled with Tailwind CSS and shadcn/ui
 ## Run it with Docker
 
 ```bash
-docker compose --env-file frontend/.env.local up --build
+docker compose up --build
 ```
 
 Then open http://localhost:8080. The stack has three containers:
@@ -26,8 +26,8 @@ Then open http://localhost:8080. The stack has three containers:
 | `db` | PostgreSQL 16, like Supabase's, on a persistent `db-data` volume. |
 
 How configuration flows:
-- **Clerk publishable key.** `--env-file frontend/.env.local` supplies the key for the frontend build. It's public by design, so it's fine to bake into the JavaScript.
-- **Backend settings.** The backend reads `backend/.env` when the container starts. Env files are excluded from both images by their `.dockerignore` files.
+- **Clerk publishable key.** Compose reads the root `.env` and passes `VITE_CLERK_PUBLISHABLE_KEY` to the frontend build. It's public by design, so it's fine to bake into the JavaScript.
+- **Backend settings.** The backend container gets the root `.env` as its environment when it starts. Env files are excluded from both images by their `.dockerignore` files.
 - **Database.** Docker uses its own `db` service. To use Supabase instead, add `DATABASE_URL=<session pooler string>` to the command's environment.
 - **Serving from another address.** Set `APP_ORIGIN` (default `http://localhost:8080`) so Clerk tokens from that site are accepted.
 
@@ -35,12 +35,15 @@ To start fresh with an empty database, run `docker compose down -v`.
 
 ## Run it locally (without Docker)
 
+All settings live in one `.env` at the repository root, shared by the backend and the frontend:
+
 ```bash
+cp .env.example .env                            # set GRE_DATABASE_URL (Supabase); ANTHROPIC_API_KEY for AI
+
 # backend
 cd backend
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt -c constraints.txt
-cp .env.example .env                            # set GRE_DATABASE_URL (Supabase); ANTHROPIC_API_KEY for AI
 .venv/bin/uvicorn app.main:app --reload --port 8000
 
 # frontend (second terminal)
@@ -84,7 +87,7 @@ Every word has a stress-marked respelling (`"pronunciation": "luh-KAH-nik"` in t
 
 ## Testing without signing in
 
-With Clerk on, the main dev stack (backend on :8000, frontend on :5173) requires sign-in. For browser testing without it, run a second stack on :8001 and :5174 in dev-auth mode. It never touches the Clerk setup. Give it its own database so dev users never land in Supabase: Docker's local Postgres works (`docker compose up -d db`, reachable on port 5433). Environment variables override the `.env` files:
+With Clerk on, the main dev stack (backend on :8000, frontend on :5173) requires sign-in. For browser testing without it, run a second stack on :8001 and :5174 in dev-auth mode. It never touches the Clerk setup. Give it its own database so dev users never land in Supabase: Docker's local Postgres works (`docker compose up -d db`, reachable on port 5433). Environment variables override the `.env` file:
 
 ```bash
 docker compose up -d db
@@ -151,12 +154,12 @@ On Vercel the backend refuses to start unless Clerk sign-in and the approved-ema
 
 ## Supabase (database) and Clerk (accounts)
 
-Both are switched on by configuration alone. The backend runs on PostgreSQL only: Supabase normally, or Docker's local Postgres. Without Clerk, set `GRE_AUTH_MODE=dev` to run with dev users. Clerk is the default, so a deployment never falls back to dev users by accident.
+Both are switched on by configuration alone. Settings go in the root `.env` (template: `.env.example`). Secrets, meaning the database URL and the Claude key, are read only by `backend/app/secrets_config.py` and show as `**********` in logs and errors; everything else is in `backend/app/config.py`. The backend runs on PostgreSQL only: Supabase normally, or Docker's local Postgres. Without Clerk, set `GRE_AUTH_MODE=dev` to run with dev users. Clerk is the default, so a deployment never falls back to dev users by accident.
 
 ### Supabase
 
 1. **Create a Supabase project.** Open **Connect** and copy a connection string. **Direct connection** is IPv6-only: fine on a Mac with IPv6, but Docker and Vercel need the **Session pooler** string, which works over IPv4.
-2. **Point the backend at it.** In `backend/.env`, set:
+2. **Point the backend at it.** In `.env`, set:
 
    ```
    GRE_DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require
@@ -173,14 +176,14 @@ Notes:
 ### Clerk
 
 1. **Create a Clerk application** and choose your sign-in methods.
-2. **Frontend.** Put the publishable key in `frontend/.env.local`:
+2. **Frontend.** Put the publishable key in `.env`:
 
    ```
    VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
    ```
 
    The app then shows Clerk sign-in and an account menu, and sends each API request with the session token (`src/lib/auth.tsx`).
-3. **Backend.** In `backend/.env`, set:
+3. **Backend.** In `.env`, set:
 
    ```
    GRE_AUTH_MODE=clerk
@@ -201,6 +204,6 @@ Notes:
 Access is limited in two layers. Clerk's sign-up restrictions only stop *new* accounts, so the backend check is what actually locks the app:
 
 1. **Clerk sign-up is invite-only** (`sign_up_mode: restricted`). Strangers can't create accounts; add people with Clerk invitations.
-2. **The backend approves specific emails.** `GRE_ALLOWED_EMAILS` in `backend/.env` lists the accounts that may use the app. Clerk's session token carries the user's email (`primaryEmail` claim, set under Clerk → Sessions), and the backend returns 403 for anyone else, including accounts that already exist. The app then shows an "Access not approved" screen with a sign-out button. An empty list means any signed-in Clerk user.
+2. **The backend approves specific emails.** `GRE_ALLOWED_EMAILS` in `.env` lists the accounts that may use the app. Clerk's session token carries the user's email (`primaryEmail` claim, set under Clerk → Sessions), and the backend returns 403 for anyone else, including accounts that already exist. The app then shows an "Access not approved" screen with a sign-out button. An empty list means any signed-in Clerk user.
 
 To give someone access, invite them in Clerk and add their email to `GRE_ALLOWED_EMAILS`, then restart the backend.
