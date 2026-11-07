@@ -1,5 +1,5 @@
-# Secrets: .env.local holds the Clerk secret key. The publishable key comes in
-# as a build argument instead.
+# Secrets stay out of the image. The publishable key comes in as a build
+# argument instead.
 .env
 .env.*
 !.env.example

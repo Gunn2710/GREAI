@@ -29,7 +29,7 @@ export default function App() {
     config.loaded && (config.auth_mode === 'clerk') !== clerkEnabled
       ? clerkEnabled
         ? 'Signed in with Clerk, but the API is in dev mode (GRE_AUTH_MODE=dev): everyone shares data by dev user id.'
-        : 'The API requires Clerk sign-in (GRE_AUTH_MODE=clerk), but VITE_CLERK_PUBLISHABLE_KEY is not set in frontend/.env.'
+        : 'The API requires Clerk sign-in (GRE_AUTH_MODE=clerk), but VITE_CLERK_PUBLISHABLE_KEY is not set in .env.'
       : null
 
   return (

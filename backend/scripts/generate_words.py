@@ -20,6 +20,7 @@ from pathlib import Path
 import anthropic
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app.secrets_config import get_secrets  # noqa: E402
 from app.seed.seed import valid_pronunciation  # noqa: E402
 
 MODEL = "claude-opus-5-5"
@@ -150,7 +151,8 @@ async def main() -> None:
     todo = [l for l in lemmas if l not in existing]
     print(f"{len(todo)} new words ({len(lemmas) - len(todo)} already in the bank)", file=sys.stderr)
 
-    client = anthropic.AsyncAnthropic()
+    key = get_secrets().anthropic_api_key  # else the SDK's usual lookup
+    client = anthropic.AsyncAnthropic(api_key=key.get_secret_value()) if key else anthropic.AsyncAnthropic()
     sem = asyncio.Semaphore(args.concurrency)
     results = await asyncio.gather(*(process(client, sem, l, clusters) for l in todo))
 

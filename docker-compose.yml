@@ -1,10 +1,10 @@
 # GRE AI: full stack in Docker.
 #
-#   docker compose --env-file frontend/.env.local up --build
+#   docker compose up --build
 #
-# --env-file only feeds ${...} values below: the Clerk publishable key for the
-# frontend build. Backend settings (Clerk issuer, Claude key, ...) come from
-# backend/.env at run time. Nothing secret is baked into an image.
+# Compose reads the root .env twice: for the ${...} values below (the Clerk
+# publishable key for the frontend build) and, through env_file, as the
+# backend's settings at run time. Nothing secret is baked into an image.
 #
 # Then open http://localhost:8080
 
@@ -30,10 +30,10 @@ services:
   backend:
     build: backend
     env_file:
-      - path: backend/.env
+      - path: .env
         required: false
     environment:
-      # Docker uses the local db service, so backend/.env can keep pointing
+      # Docker uses the local db service, so .env can keep pointing
       # at Supabase. Set DATABASE_URL to your Supabase Session pooler string
       # to use Supabase instead (the direct connection is IPv6-only).
       GRE_DATABASE_URL: ${DATABASE_URL:-postgresql://gre:gre@db:5432/gre}

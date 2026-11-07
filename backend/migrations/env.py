@@ -1,6 +1,6 @@
 """Alembic environment.
 
-The database URL comes from the app settings (GRE_DATABASE_URL), or from
+The database URL comes from app/secrets_config.py (GRE_DATABASE_URL), or from
 config.attributes["database_url"] when migrations run inside the app.
 
     alembic upgrade head                      # apply migrations
@@ -9,7 +9,7 @@ config.attributes["database_url"] when migrations run inside the app.
 from alembic import context
 
 from app import models  # noqa: F401  (registers tables on Base.metadata)
-from app.config import get_settings
+from app.secrets_config import get_secrets
 from app.db import Base, make_engine, normalize_url
 
 config = context.config
@@ -17,7 +17,7 @@ target_metadata = Base.metadata
 
 
 def database_url() -> str:
-    return normalize_url(config.attributes.get("database_url") or get_settings().database_url)
+    return normalize_url(config.attributes.get("database_url") or get_secrets().database_url.get_secret_value())
 
 
 def run_migrations_offline() -> None:

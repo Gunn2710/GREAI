@@ -7,7 +7,7 @@ from alembic.script import ScriptDirectory
 from pydantic import ValidationError
 from sqlalchemy import inspect, text
 
-from app.config import Settings
+from app.secrets_config import Secrets
 from app.db import BASELINE_REVISION, Base, alembic_config, engine, init_db, make_engine
 
 HEAD = ScriptDirectory.from_config(alembic_config()).get_current_head()
@@ -77,5 +77,13 @@ def test_row_level_security(client):
 
 def test_only_postgres_urls_are_accepted():
     with pytest.raises(ValidationError, match="PostgreSQL"):
-        Settings(_env_file=None, database_url="sqlite:///./gre_prep.db")
-    assert Settings(_env_file=None, database_url="postgresql://u:p@h:5432/db").database_url
+        Secrets(_env_file=None, database_url="sqlite:///./gre_prep.db")
+    assert Secrets(_env_file=None, database_url="postgresql://u:p@h:5432/db").database_url
+
+
+def test_secrets_never_show_in_errors_or_reprs():
+    with pytest.raises(ValidationError) as err:
+        Secrets(_env_file=None, database_url="mysql://user:hunter2@h/db")
+    assert "hunter2" not in str(err.value)
+    s = Secrets(_env_file=None, database_url="postgresql://u:hunter2@h/db", anthropic_api_key="sk-ant-xyz")
+    assert "hunter2" not in repr(s) and "sk-ant-xyz" not in repr(s)
