@@ -12,6 +12,7 @@ point of use. Ordinary, non-secret settings live in app/config.py.
 import os
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,9 +42,27 @@ class Secrets(BaseSettings):
     @field_validator("database_url")
     @classmethod
     def _postgres_only(cls, url: SecretStr) -> SecretStr:
-        if not url.get_secret_value().startswith(("postgres://", "postgresql://", "postgresql+psycopg://")):
+        value = url.get_secret_value()
+        if not value.startswith(("postgres://", "postgresql://", "postgresql+psycopg://")):
             raise ValueError("GRE_DATABASE_URL must be a PostgreSQL connection string (postgresql://...)")
+        # Supabase's direct host (db.<ref>.supabase.co) is IPv6-only, and Vercel
+        # functions can't reach IPv6: every connection fails with "Cannot assign
+        # requested address". Say so up front instead.
+        if os.environ.get("VERCEL") and _is_supabase_direct_host(value):
+            raise ValueError(
+                "GRE_DATABASE_URL points at Supabase's direct connection (db.<ref>.supabase.co), "
+                "which is IPv6-only and unreachable from Vercel. Use the Transaction pooler string "
+                "from Supabase → Connect (…pooler.supabase.com:6543) instead."
+            )
         return url
+
+
+def _is_supabase_direct_host(url: str) -> bool:
+    try:
+        host = urlsplit(url).hostname or ""
+    except ValueError:
+        return False
+    return host.startswith("db.") and host.endswith(".supabase.co")
 
 
 @lru_cache

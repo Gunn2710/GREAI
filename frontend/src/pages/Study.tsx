@@ -8,19 +8,45 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { CardStats, DEPTH_LABEL, TIER_LABEL, formatDue } from '../components/Comfort'
 import { Question, type Submit } from '../components/Question'
 import { SetProgress } from '../components/Sets'
 import { WordCard } from '../components/WordCard'
 import { api, ApiError } from '../lib/api'
-import type { AnswerResult, StudyItem, WordSet } from '../lib/types'
+import type { AnswerResult, StudyFormat, StudyItem, WordSet } from '../lib/types'
+
+const FORMATS: { format: StudyFormat; label: string }[] = [
+  { format: 'mixed', label: 'Mixed' },
+  { format: 'flashcard', label: 'Flashcards' },
+  { format: 'mcq', label: 'Multiple choice' },
+]
+const FORMAT_KEY = 'study-format'
+
+/** The last format picked, remembered per browser (a convenience only). */
+function savedFormat(): StudyFormat {
+  try {
+    const v = localStorage.getItem(FORMAT_KEY)
+    return FORMATS.some((f) => f.format === v) ? (v as StudyFormat) : 'mixed'
+  } catch {
+    return 'mixed'
+  }
+}
+
+function saveFormat(format: StudyFormat) {
+  try {
+    localStorage.setItem(FORMAT_KEY, format)
+  } catch {
+    // storage blocked: the choice just won't be remembered
+  }
+}
 
 type Phase =
   | { kind: 'loading' }
   | { kind: 'question'; item: StudyItem; isNew: boolean; likelyKnown: boolean }
   | { kind: 'result'; item: StudyItem; result: AnswerResult; response: Record<string, unknown> }
-  | { kind: 'done'; nextDue: string | null }
+  | { kind: 'done'; nextDue: string | null; unseen: number; limit: number }
   | { kind: 'error'; message: string }
 
 export default function Study() {
@@ -28,21 +54,22 @@ export default function Study() {
   const [busy, setBusy] = useState(false)
   const [count, setCount] = useState(0)
   const [set, setSet] = useState<(WordSet & { total: number }) | null>(null)
+  const [format, setFormat] = useState<StudyFormat>(savedFormat)
 
   const loadNext = useCallback(async () => {
     setPhase({ kind: 'loading' })
     try {
-      const res = await api.next()
+      const res = await api.next(format)
       if (!res.done) setSet(res.set)
       setPhase(
         res.done
-          ? { kind: 'done', nextDue: res.next_due }
+          ? { kind: 'done', nextDue: res.next_due, unseen: res.unseen_words, limit: res.new_word_limit }
           : { kind: 'question', item: res.item, isNew: res.is_new_word, likelyKnown: res.likely_known },
       )
     } catch (e) {
       setPhase({ kind: 'error', message: e instanceof ApiError ? e.message : 'Could not reach the server' })
     }
-  }, [])
+  }, [format])
 
   useEffect(() => {
     loadNext()
@@ -62,6 +89,18 @@ export default function Study() {
     }
   }
 
+  const studyMore = async (words: number) => {
+    setBusy(true)
+    try {
+      await api.studyMore(words)
+      await loadNext()
+    } catch (e) {
+      setPhase({ kind: 'error', message: e instanceof ApiError ? e.message : 'Could not reach the server' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   useEffect(() => {
     if (phase.kind !== 'result') return
     const onKey = (e: KeyboardEvent) => {
@@ -73,6 +112,22 @@ export default function Study() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+      <Tabs
+        value={format}
+        onValueChange={(v) => {
+          setFormat(v as StudyFormat)
+          saveFormat(v as StudyFormat)
+        }}
+      >
+        <TabsList className="w-full sm:w-fit" aria-label="Question format">
+          {FORMATS.map((f) => (
+            <TabsTrigger key={f.format} value={f.format} className="sm:px-3">
+              {f.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         {set ? (
           <Link to={`/words?set=${set.number}`} className="flex items-center gap-3 hover:text-foreground">
@@ -106,17 +161,33 @@ export default function Study() {
           <CardContent className="flex flex-col items-center gap-2 py-4 text-center">
             <h2 className="text-xl font-semibold tracking-tight">All caught up</h2>
             <p className="max-w-md text-sm text-muted-foreground">
-              {phase.nextDue ? `Your next review is due ${formatDue(phase.nextDue)}.` : 'No reviews scheduled.'} New
-              words for today are done too. You can raise the daily limit in Settings.
+              {phase.nextDue ? `Your next review is due ${formatDue(phase.nextDue)}.` : 'No reviews scheduled.'}{' '}
+              {phase.unseen > 0
+                ? `You've reached today's limit of ${phase.limit} new ${phase.limit === 1 ? 'word' : 'words'}.`
+                : "You've started every word in the bank."}
             </p>
-            <div className="mt-2 flex flex-wrap justify-center gap-2">
-              <Button variant="outline" onClick={loadNext}>
-                Check again
-              </Button>
-              <Button asChild>
-                <Link to="/dashboard">Back to dashboard</Link>
-              </Button>
-            </div>
+            {phase.unseen > 0 ? (
+              <>
+                <p className="text-sm font-medium">Want to keep going?</p>
+                <div className="mt-1 flex flex-wrap justify-center gap-2">
+                  {[...new Set([5, 10].map((n) => Math.min(n, phase.unseen)))].map((n, i) => (
+                    <Button key={n} variant={i === 0 ? 'default' : 'outline'} disabled={busy} onClick={() => studyMore(n)}>
+                      {i === 0 ? `Learn ${n} more ${n === 1 ? 'word' : 'words'}` : `${n} more`}
+                    </Button>
+                  ))}
+                </div>
+                <p className="max-w-md text-xs text-muted-foreground">
+                  Just for today. To change the daily limit, go to{' '}
+                  <Link to="/settings" className="underline underline-offset-2 hover:text-foreground">
+                    Settings
+                  </Link>
+                  .
+                </p>
+              </>
+            ) : null}
+            <Button asChild variant="ghost" className="mt-1">
+              <Link to="/dashboard">Back to dashboard</Link>
+            </Button>
           </CardContent>
         </Card>
       )}

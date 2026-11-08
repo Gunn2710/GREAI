@@ -91,7 +91,14 @@ export type NextResponse =
       /** the set new words are coming from, null once every word is started */
       set: (WordSet & { total: number }) | null
     }
-  | { done: true; next_due: string | null }
+  | {
+      done: true
+      next_due: string | null
+      /** words not started yet; 0 means there is nothing left to "study more" */
+      unseen_words: number
+      /** today's new-word allowance, including any "study more" words */
+      new_word_limit: number
+    }
 
 export interface Hint {
   eliminate?: number[]
@@ -175,6 +182,7 @@ export type PlacementStep =
   | { done: true; result: PlacementResult }
 
 export type PracticeKind = 'tc' | 'se' | 'mixed'
+export type StudyFormat = 'mixed' | 'flashcard' | 'mcq'
 
 export interface PracticeItem {
   id: string

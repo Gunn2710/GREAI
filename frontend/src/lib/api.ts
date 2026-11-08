@@ -14,6 +14,7 @@ import type {
   Profile,
   SetsResponse,
   Stats,
+  StudyFormat,
   WordDetail,
   WordListEntry,
   CardSummary,
@@ -88,8 +89,9 @@ export const api = {
   profile: () => request<Profile>('/me/profile'),
   saveProfile: (p: Profile) => request<Profile>('/me/profile', { method: 'PUT', body: JSON.stringify(p) }),
 
-  next: () => request<NextResponse>('/study/next'),
+  next: (format: StudyFormat = 'mixed') => request<NextResponse>(`/study/next?format=${format}`),
   hint: (itemId: string) => post<Hint>(`/study/items/${itemId}/hint`),
+  studyMore: (words: number) => post<{ extra_today: number; new_word_limit: number }>('/study/more', { words }),
   answer: (itemId: string, response: Record<string, unknown>, responseMs: number, confidence?: Confidence) =>
     post<AnswerResult>(`/study/items/${itemId}/answer`, {
       response,

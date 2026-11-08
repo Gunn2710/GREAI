@@ -5,7 +5,7 @@ an auth table.
 """
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,6 +24,9 @@ class Profile(Base):
     target_verbal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target_quant: Mapped[int | None] = mapped_column(Integer, nullable=True)
     daily_new_words: Mapped[int] = mapped_column(Integer, default=10)
+    # "Study more": new words added on top of the daily limit, for one day only.
+    extra_new_words: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    extra_new_words_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

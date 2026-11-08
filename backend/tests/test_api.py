@@ -1,6 +1,7 @@
 import asyncio
 from datetime import timedelta
 
+import pytest
 from sqlalchemy import select
 
 from app.items.base import get_item_type
@@ -293,3 +294,79 @@ def test_new_words_come_from_the_current_set(client, db):
     assert data["current"] == 2
     assert data["sets"][0]["status"] in ("reviewing", "done")
     assert client.get("/api/stats", headers=h).json()["sets"]["current"]["number"] == 2
+
+
+def test_mode_chain_honours_the_chosen_format():
+    from app.services.study import mode_chain
+
+    assert mode_chain("usage") == ["usage", "synonyms", "cloze", "meaning", "flashcard"]
+    assert mode_chain("cloze", "flashcard") == ["flashcard"]
+    # Multiple choice only: nearest MCQ mode first, flashcard as the last resort.
+    assert mode_chain("usage", "mcq") == ["synonyms", "cloze", "meaning", "flashcard"]
+    assert mode_chain("flashcard", "mcq") == ["meaning", "cloze", "synonyms", "flashcard"]
+    assert mode_chain("cloze", "mcq") == ["cloze", "meaning", "synonyms", "flashcard"]
+
+
+@pytest.mark.parametrize("fmt, allowed", [
+    ("flashcard", {"flashcard"}),
+    ("mcq", {"meaning", "cloze", "synonyms"}),
+])
+def test_study_format_filter(client, fmt, allowed):
+    h = headers(f"format-{fmt}")
+    client.put("/api/me/profile", json={"daily_new_words": 6}, headers=h)
+    for _ in range(6):
+        res = client.get(f"/api/study/next?format={fmt}", headers=h).json()
+        assert res["item"]["item_type"] in allowed
+        response = {"self_rating": 3} if fmt == "flashcard" else {"selected": 0}
+        client.post(f"/api/study/items/{res['item']['id']}/answer",
+                    json={"response": response, "response_ms": 4000}, headers=h)
+
+
+def test_unknown_study_format_is_rejected(client):
+    assert client.get("/api/study/next?format=essay", headers=headers("x")).status_code == 422
+
+
+def _start_new_words(client, h, n):
+    """Answer flashcards until n new words are started (or the day is done)."""
+    for _ in range(n * 3):
+        res = client.get("/api/study/next?format=flashcard", headers=h).json()
+        if res["done"]:
+            return res
+        client.post(f"/api/study/items/{res['item']['id']}/answer",
+                    json={"response": {"self_rating": 4}, "response_ms": 3000}, headers=h)
+    return client.get("/api/study/next", headers=h).json()
+
+
+def test_study_more_raises_todays_limit(client, db):
+    from app.services.study import new_words_started_today
+
+    h = headers("eager")
+    client.put("/api/me/profile", json={"daily_new_words": 2}, headers=h)
+    res = _start_new_words(client, h, 2)
+    assert res["done"] and res["new_word_limit"] == 2 and res["unseen_words"] > 0
+    assert new_words_started_today(db, "eager") == 2
+
+    more = client.post("/api/study/more", json={"words": 3}, headers=h).json()
+    assert more == {"extra_today": 3, "new_word_limit": 5}
+    assert client.get("/api/stats", headers=h).json()["new_available_today"] == 3
+    res = _start_new_words(client, h, 3)
+    assert res["done"] and res["new_word_limit"] == 5
+    db.expire_all()
+    assert new_words_started_today(db, "eager") == 5
+    # The setting itself is unchanged.
+    assert client.get("/api/me/profile", headers=h).json()["daily_new_words"] == 2
+
+
+def test_study_more_is_for_today_only(client, db):
+    from datetime import date
+
+    from app.models import Profile
+
+    h = headers("yesterday")
+    client.post("/api/study/more", json={"words": 5}, headers=h)
+    profile = db.get(Profile, "yesterday")
+    db.refresh(profile)
+    profile.extra_new_words_on = date(2020, 1, 1)
+    db.commit()
+    assert client.post("/api/study/more", json={"words": 2}, headers=h).json()["extra_today"] == 2
+    assert client.post("/api/study/more", json={"words": 0}, headers=h).status_code == 422
