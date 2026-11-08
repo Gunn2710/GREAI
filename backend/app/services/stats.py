@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app import engine_bridge as eb
 from app.models import Attempt, Card, Word, utcnow
 from app.services.sets import word_sets
-from app.services.study import get_profile, new_words_started_today, start_of_today, word_detail
+from app.services.study import get_profile, new_word_limit, new_words_started_today, start_of_today, word_detail
 
 TIERS = ["new", "learning", "shaky", "comfortable", "mastered"]
 VOCAB_TYPES = ("flashcard", "meaning", "cloze", "synonyms", "usage")
@@ -77,7 +77,7 @@ def dashboard(db: Session, user_id: str) -> dict:
     weakest = sorted(
         (x for x in summaries if x[0].reps > 0), key=lambda x: x[1]["comfort"]
     )[:5]
-    new_left = max(0, min(profile.daily_new_words - new_words_started_today(db, user_id),
+    new_left = max(0, min(new_word_limit(profile) - new_words_started_today(db, user_id),
                           total_words - len(cards)))
 
     sets = word_sets(db, user_id)

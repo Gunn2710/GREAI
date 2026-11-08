@@ -87,3 +87,29 @@ def test_secrets_never_show_in_errors_or_reprs():
     assert "hunter2" not in str(err.value)
     s = Secrets(_env_file=None, database_url="postgresql://u:hunter2@h/db", anthropic_api_key="sk-ant-xyz")
     assert "hunter2" not in repr(s) and "sk-ant-xyz" not in repr(s)
+
+
+DIRECT = "postgresql://postgres:pw@db.abcdefgh.supabase.co:5432/postgres"
+POOLER = "postgresql://postgres.abcdefgh:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+
+
+def test_vercel_rejects_the_ipv6_only_supabase_host(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    with pytest.raises(ValidationError, match="Transaction pooler") as err:
+        Secrets(_env_file=None, GRE_DATABASE_URL=DIRECT)
+    assert "pw" not in str(err.value)
+    assert Secrets(_env_file=None, GRE_DATABASE_URL=POOLER).database_url.get_secret_value() == POOLER
+
+
+def test_direct_host_is_fine_off_vercel(monkeypatch):
+    monkeypatch.delenv("VERCEL", raising=False)
+    assert Secrets(_env_file=None, GRE_DATABASE_URL=DIRECT).database_url.get_secret_value() == DIRECT
+
+
+def test_vercel_engine_keeps_no_idle_connections(monkeypatch):
+    from sqlalchemy.pool import NullPool
+
+    monkeypatch.setenv("VERCEL", "1")
+    assert isinstance(make_engine(POOLER).pool, NullPool)
+    monkeypatch.delenv("VERCEL")
+    assert not isinstance(make_engine(POOLER).pool, NullPool)

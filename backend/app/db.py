@@ -1,8 +1,10 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import Engine
+from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.secrets_config import get_secrets
@@ -27,7 +29,13 @@ def normalize_url(url: str) -> str:
 def make_engine(url: str) -> Engine:
     # Supabase's transaction pooler (port 6543) can't hold prepared statements
     # across transactions; turning them off is harmless elsewhere.
-    return create_engine(normalize_url(url), connect_args={"prepare_threshold": None}, pool_pre_ping=True)
+    options: dict = {"connect_args": {"prepare_threshold": None}, "pool_pre_ping": True}
+    if os.environ.get("VERCEL"):
+        # Serverless instances are many, short-lived and frozen between requests:
+        # an idle pool in each one would only use up the pooler's connection
+        # limit. Supabase's pooler does the pooling instead.
+        options["poolclass"] = NullPool
+    return create_engine(normalize_url(url), **options)
 
 
 engine = make_engine(get_secrets().database_url.get_secret_value())

@@ -147,7 +147,7 @@ Set `GRE_AI_ENABLED=false` to run without credentials. Usage questions are then 
 
 `vercel.json` deploys both halves as one Vercel project: `/api/*` goes to the FastAPI backend and everything else to the Vite frontend. Set these in the Vercel project's environment variables:
 
-- Backend: `GRE_DATABASE_URL` (the Supabase **Session pooler** string), `GRE_AUTH_MODE=clerk`, `GRE_CLERK_JWKS_URL`, `GRE_CLERK_ISSUER`, `GRE_ALLOWED_EMAILS`, `ANTHROPIC_API_KEY`. Add `GRE_CLERK_AUTHORIZED_PARTIES` only for a custom domain; the deployment's own Vercel URLs are accepted automatically.
+- Backend: `GRE_DATABASE_URL` (the Supabase **Transaction pooler** string, `…pooler.supabase.com:6543`; the Direct connection is IPv6-only and Vercel can't reach it), `GRE_AUTH_MODE=clerk`, `GRE_CLERK_JWKS_URL`, `GRE_CLERK_ISSUER`, `GRE_ALLOWED_EMAILS`, `ANTHROPIC_API_KEY`. Add `GRE_CLERK_AUTHORIZED_PARTIES` only for a custom domain; the deployment's own Vercel URLs are accepted automatically.
 - Frontend: `VITE_CLERK_PUBLISHABLE_KEY`. It is read at build time, so redeploy after changing it.
 
 On Vercel the backend refuses to start unless Clerk sign-in and the approved-email list are configured, so a missing setting takes the app down instead of opening it up.
@@ -158,7 +158,7 @@ Both are switched on by configuration alone. Settings go in the root `.env` (tem
 
 ### Supabase
 
-1. **Create a Supabase project.** Open **Connect** and copy a connection string. **Direct connection** is IPv6-only: fine on a Mac with IPv6, but Docker and Vercel need the **Session pooler** string, which works over IPv4.
+1. **Create a Supabase project.** Open **Connect** and copy a connection string. **Direct connection** is IPv6-only: fine on a Mac with IPv6, but Docker needs the **Session pooler** string, which works over IPv4. On Vercel use the **Transaction pooler** (port 6543), which suits serverless; the backend refuses to start there with the direct host.
 2. **Point the backend at it.** In `.env`, set:
 
    ```

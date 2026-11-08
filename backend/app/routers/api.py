@@ -62,8 +62,19 @@ def update_profile(body: ProfileIn, user_id: str = Depends(current_user_id), db:
 # ---- study loop -------------------------------------------------------------
 
 @router.get("/study/next")
-def next_item(user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
-    return study.next_item(db, user_id)
+def next_item(format: Literal["mixed", "flashcard", "mcq"] = "mixed",
+              user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
+    return study.next_item(db, user_id, format)
+
+
+class StudyMoreIn(BaseModel):
+    words: int = Field(default=5, ge=1, le=50)
+
+
+@router.post("/study/more")
+def study_more(body: StudyMoreIn, user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Allow more new words today, past the daily limit."""
+    return study.study_more(db, user_id, body.words)
 
 
 @router.post("/study/items/{item_id}/hint")

@@ -20,6 +20,25 @@ from app.services.sets import current_set
 # If a mode can't be built for a word (e.g. no example sentence for cloze),
 # fall back to the next mode down the ladder.
 FALLBACK_CHAIN = ["usage", "synonyms", "cloze", "meaning", "flashcard"]
+MCQ_TYPES = ("synonyms", "cloze", "meaning")
+
+# What the learner asked to practise: "mixed" lets the scheduler choose (the
+# default), "flashcard" is flashcards only, "mcq" multiple choice only.
+STUDY_FORMATS = ("mixed", "flashcard", "mcq")
+
+
+def mode_chain(chosen: str, fmt: str = "mixed") -> list[str]:
+    """Item types to try, in order, for the scheduler's chosen mode."""
+    if fmt == "flashcard":
+        return ["flashcard"]
+    at = FALLBACK_CHAIN.index(chosen)
+    chain = FALLBACK_CHAIN[at:]
+    if fmt == "mcq":
+        # The closest multiple-choice modes to the chosen one: easier first,
+        # then harder (a new word's flashcard becomes a meaning question).
+        chain = [t for t in chain + FALLBACK_CHAIN[:at][::-1] if t in MCQ_TYPES]
+        chain.append("flashcard")  # always buildable, so the session never stalls
+    return chain
 
 
 def word_detail(word: Word) -> dict:
@@ -79,6 +98,34 @@ def new_words_started_today(db: Session, user_id: str) -> int:
     return _cards_started_today(db, user_id, fast_tracked=False)
 
 
+def extra_today(profile: Profile) -> int:
+    """New words added with "Study more" today (they lapse at midnight UTC)."""
+    return profile.extra_new_words if profile.extra_new_words_on == utcnow().date() else 0
+
+
+def new_word_limit(profile: Profile) -> int:
+    """Today's new-word allowance: the daily setting plus any "Study more" words."""
+    return profile.daily_new_words + extra_today(profile)
+
+
+MAX_EXTRA_PER_DAY = 100
+
+
+def study_more(db: Session, user_id: str, words: int) -> dict:
+    """Raise today's new-word allowance by `words`, for today only."""
+    profile = get_profile(db, user_id)
+    profile.extra_new_words = min(MAX_EXTRA_PER_DAY, extra_today(profile) + words)
+    profile.extra_new_words_on = utcnow().date()
+    db.commit()
+    return {"extra_today": profile.extra_new_words, "new_word_limit": new_word_limit(profile)}
+
+
+def unseen_words(db: Session, user_id: str) -> int:
+    """Words in the bank this user hasn't started yet."""
+    seen = select(Card.word_id).where(Card.user_id == user_id)
+    return db.scalar(select(func.count()).select_from(Word).where(Word.id.not_in(seen))) or 0
+
+
 def _last_word_id(db: Session, user_id: str) -> int | None:
     return db.scalar(
         select(IssuedItem.word_id).where(IssuedItem.user_id == user_id)
@@ -113,11 +160,12 @@ def _start_new_card(db: Session, user_id: str) -> Card | None:
         return None
 
     theta = get_params(db, user_id).vocab_level
+    limit = new_word_limit(profile)
     if (theta is not None
             and ve.p_know(theta, word_difficulty(word)) >= FAST_TRACK_P
-            and _cards_started_today(db, user_id, fast_tracked=True) < 2 * profile.daily_new_words):
+            and _cards_started_today(db, user_id, fast_tracked=True) < 2 * limit):
         card = known_card(user_id, word.id, "fast_track", due_in_days=0)
-    elif new_words_started_today(db, user_id) < profile.daily_new_words:
+    elif new_words_started_today(db, user_id) < limit:
         card = Card(user_id=user_id, word_id=word.id, due=utcnow(), origin="study")
     else:
         return None
@@ -136,20 +184,23 @@ def _client_item(item: IssuedItem) -> dict:
     }
 
 
-def next_item(db: Session, user_id: str) -> dict:
+def next_item(db: Session, user_id: str, fmt: str = "mixed") -> dict:
     now = eb.now_days()
     progress = current_set(db, user_id)  # before this item, which may start a new word
     card = _pick_due_card(db, user_id, now) or _start_new_card(db, user_id)
     if card is None:
         next_due = db.scalar(select(func.min(Card.due)).where(Card.user_id == user_id))
-        return {"done": True, "next_due": next_due.isoformat() if next_due else None}
+        return {
+            "done": True,
+            "next_due": next_due.isoformat() if next_due else None,
+            "unseen_words": unseen_words(db, user_id),  # 0: nothing left to "study more"
+            "new_word_limit": new_word_limit(get_profile(db, user_id)),
+        }
 
     word = db.get(Word, card.word_id)
     mode = eb.model.choose_mode(eb.card_to_engine(card), random.random(), claude.enabled)
-    chain = FALLBACK_CHAIN[FALLBACK_CHAIN.index(eb.NAME_BY_MODE[mode]):]
-
     built, type_name = None, None
-    for type_name in chain:
+    for type_name in mode_chain(eb.NAME_BY_MODE[mode], fmt):
         built = get_item_type(type_name).build(db, user_id, word)
         if built is not None:
             break
