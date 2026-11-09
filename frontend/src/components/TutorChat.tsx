@@ -12,7 +12,42 @@ const STARTERS = [
   'Quiz me on this word.',
 ]
 
+/** Tutor chat about one word (the word page). */
 export function TutorChat({ wordId, lemma }: { wordId: number; lemma: string }) {
+  return (
+    <ChatBox
+      ask={async (history) => (await api.tutor(wordId, history)).reply}
+      starters={STARTERS}
+      placeholder={`Ask about “${lemma}”…`}
+    />
+  )
+}
+
+/** Shows **bold** and *italic* from a reply as text styles (no other markdown, no HTML). */
+function Emphasis({ text }: { text: string }) {
+  return text.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') && part.length > 4 ? (
+      <strong key={i} className="font-semibold">
+        {part.slice(2, -2)}
+      </strong>
+    ) : part.startsWith('*') && part.endsWith('*') && part.length > 2 ? (
+      <em key={i}>{part.slice(1, -1)}</em>
+    ) : (
+      part
+    ),
+  )
+}
+
+/** A chat thread with starter prompts; `ask` sends the history and returns the reply. */
+export function ChatBox({
+  ask,
+  starters,
+  placeholder,
+}: {
+  ask: (history: ChatMessage[]) => Promise<string>
+  starters: string[]
+  placeholder: string
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -27,7 +62,7 @@ export function TutorChat({ wordId, lemma }: { wordId: number; lemma: string }) 
     setBusy(true)
     setError(null)
     try {
-      const { reply } = await api.tutor(wordId, history)
+      const reply = await ask(history)
       setMessages([...history, { role: 'assistant', content: reply }])
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Something went wrong')
@@ -47,7 +82,7 @@ export function TutorChat({ wordId, lemma }: { wordId: number; lemma: string }) 
     <div className="flex flex-col gap-3">
       {messages.length === 0 && (
         <div className="flex flex-wrap gap-2">
-          {STARTERS.map((s) => (
+          {starters.map((s) => (
             <Button key={s} variant="outline" size="sm" className="rounded-full" onClick={() => send(s)} disabled={busy}>
               {s}
             </Button>
@@ -64,7 +99,7 @@ export function TutorChat({ wordId, lemma }: { wordId: number; lemma: string }) 
                 m.role === 'user' ? 'self-end bg-primary text-primary-foreground' : 'self-start bg-muted',
               )}
             >
-              {m.content}
+              {m.role === 'assistant' ? <Emphasis text={m.content} /> : m.content}
             </div>
           ))}
           {busy && <div className="self-start rounded-2xl bg-muted px-4 py-2 text-sm text-muted-foreground">Thinking…</div>}
@@ -75,7 +110,7 @@ export function TutorChat({ wordId, lemma }: { wordId: number; lemma: string }) 
         <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={`Ask about “${lemma}”…`}
+          placeholder={placeholder}
           maxLength={2000}
         />
         <Button type="submit" disabled={busy || !draft.trim()}>

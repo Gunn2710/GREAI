@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.models import Word
 from app.services import placement, practice, sets, stats, study
+from app.services import study_chat as study_chat_service
 from app.services.ai import claude
 
 router = APIRouter(prefix="/api")
@@ -187,6 +188,15 @@ class ChatMessage(BaseModel):
 
 class TutorIn(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=40)
+
+
+@router.post("/study/items/{item_id}/chat")
+async def study_chat(item_id: str, body: TutorIn, user_id: str = Depends(current_user_id),
+                     db: Session = Depends(get_db)):
+    """Ask the tutor about the question you're on (before or after answering)."""
+    if body.messages[-1].role != "user":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Last message must be from the user")
+    return await study_chat_service.chat(db, user_id, item_id, [m.model_dump() for m in body.messages])
 
 
 @router.post("/words/{word_id}/tutor")

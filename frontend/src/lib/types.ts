@@ -40,8 +40,10 @@ export type SetStatus = 'done' | 'reviewing' | 'current' | 'locked'
 
 export interface WordSet {
   number: number
-  /** frequency tier of its words (1-3) */
+  /** frequency tier of its words (1-3); GregMat sets mix tiers */
   tier: number
+  /** "gregmat": one of GregMat's groups, in order; "bank": the rest of the word bank */
+  source: 'gregmat' | 'bank'
   size: number
   started: number
   learned: number

@@ -2,14 +2,16 @@
 
     vocab/clusters.json   tiers, frequency sources, families, clusters
     vocab/words_*.json    word entries
+    vocab/groups.json     the study order: GregMat's 32 groups of 30 words
 
 Clusters group near-synonyms. Families group clusters whose meanings are close
 enough to be confused (e.g. "soothe" and "ease"); quiz distractors never come
 from the target's own family. Syncing is idempotent: new words are inserted,
 existing ones (matched by lemma) are updated, and nothing is deleted.
 
-Words are split into study sets of 20-30 (see assign_sets): the most common
-words first, so working through the sets in order is the progression.
+Words are split into study sets (see assign_sets): first GregMat's groups,
+one set per group in order, then the rest of the bank in sets of 20-30, most
+common first. Working through the sets in order is the progression.
 """
 import hashlib
 import json
@@ -64,6 +66,11 @@ def inflections(lemma: str) -> set[str]:
     if lemma.endswith("y") and lemma[-2] not in "aeiou":
         forms |= {lemma[:-1] + "ies", lemma[:-1] + "ied"}
     return forms
+
+
+def load_groups(directory: Path = VOCAB_DIR) -> list[list[str]]:
+    path = directory / "groups.json"
+    return json.loads(path.read_text())["groups"] if path.exists() else []
 
 
 def load_bank(directory: Path = VOCAB_DIR) -> tuple[dict, list[dict]]:
@@ -168,14 +175,29 @@ def _set_count(n: int) -> int:
     return count
 
 
-def assign_sets(words: list[dict]) -> dict[str, tuple[int, int]]:
-    """lemma -> (set number, rank in the whole study order). Sets never mix
-    frequency tiers; each tier is split into near-equal sets of about 25."""
-    by_tier: dict[int, list[dict]] = defaultdict(list)
-    for w in words:
-        by_tier[w["tier"]].append(w)
+def assign_sets(words: list[dict], groups: list[list[str]] = ()) -> dict[str, tuple[int, int]]:
+    """lemma -> (set number, rank in the whole study order).
+
+    Each group is a set, in the given order (a word listed twice stays in its
+    first group; listed words missing from the bank are skipped). The words in
+    no group follow: those sets never mix frequency tiers, and each tier is
+    split into near-equal sets of about 25."""
+    in_bank = {w["lemma"] for w in words}
     out: dict[str, tuple[int, int]] = {}
     set_no = rank = 0
+    for group in groups:
+        members = [lemma for lemma in dict.fromkeys(group) if lemma in in_bank and lemma not in out]
+        if not members:
+            continue
+        set_no += 1
+        for lemma in members:
+            rank += 1
+            out[lemma] = (set_no, rank)
+
+    by_tier: dict[int, list[dict]] = defaultdict(list)
+    for w in words:
+        if w["lemma"] not in out:
+            by_tier[w["tier"]].append(w)
     for tier in sorted(by_tier):
         ordered = _study_order(by_tier[tier])
         count = _set_count(len(ordered))
@@ -214,7 +236,8 @@ def sync_bank(db: Session, directory: Path = VOCAB_DIR) -> dict:
     db.flush()
 
     existing = {w.lemma: w for w in db.scalars(select(Word))}
-    sets = assign_sets(words)
+    groups = load_groups(directory)
+    sets = assign_sets(words, groups)
     added = updated = 0
     for entry in words:
         values = {f: entry.get(f) for f in WORD_FIELDS}
@@ -231,6 +254,9 @@ def sync_bank(db: Session, directory: Path = VOCAB_DIR) -> dict:
             updated += 1
     db.commit()
 
+    unlisted = sorted({l for g in groups for l in g} - {w["lemma"] for w in words})
+    if unlisted:
+        log.warning("Words in groups.json with no entry in the bank (skipped): %s", unlisted)
     missing = set(existing) - {w["lemma"] for w in words}
     if missing:
         log.warning("Words in the database but not in the bank files (kept): %s", sorted(missing))
