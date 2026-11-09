@@ -50,7 +50,7 @@ export default function Words() {
           <CardTitle className="text-lg">{selectedSet ? `Set ${selectedSet.number}` : 'All words'}</CardTitle>
           <CardDescription>
             {selectedSet
-              ? `${FREQUENCY_LABEL[selectedSet.tier]} · ${selectedSet.size} words`
+              ? `${setLabel(selectedSet)} · ${selectedSet.size} words`
               : words
                 ? `${words.length} ${search.trim() ? 'matching words' : 'words'}`
                 : 'Loading…'}
@@ -133,7 +133,12 @@ export default function Words() {
   )
 }
 
-/** Every set, grouped by how often its words show up on the GRE. */
+/** GregMat sets have their own section; the rest are grouped by frequency. */
+function setLabel(s: WordSet) {
+  return s.source === 'gregmat' ? 'GregMat groups' : `More words: ${FREQUENCY_LABEL[s.tier].toLowerCase()}`
+}
+
+/** Every set: GregMat's groups first, then the rest of the bank by how often its words show up. */
 function SetsCard({
   data,
   selected,
@@ -143,23 +148,21 @@ function SetsCard({
   selected: number | null
   onSelect: (n: number) => void
 }) {
-  const groups = new Map<number, WordSet[]>()
-  for (const s of data.sets) groups.set(s.tier, [...(groups.get(s.tier) ?? []), s])
+  const groups = new Map<string, WordSet[]>()
+  for (const s of data.sets) groups.set(setLabel(s), [...(groups.get(setLabel(s)) ?? []), s])
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-lg">Sets</CardTitle>
         <CardDescription>
-          Most common words first. New words come from the current set; the next one opens once you have started every
-          word in it. Pick a set to see its words.
+          GregMat&apos;s groups in order, then the rest of the word bank, most common first. New words come from the
+          current set; the next one opens once you have started every word in it. Pick a set to see its words.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
-        {[...groups].map(([tier, sets]) => (
-          <section key={tier} className="flex flex-col gap-2">
-            <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              {FREQUENCY_LABEL[tier]}
-            </h3>
+        {[...groups].map(([label, sets]) => (
+          <section key={label} className="flex flex-col gap-2">
+            <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{label}</h3>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
               {sets.map((s) => (
                 <SetTile key={s.number} set={s} selected={s.number === selected} onSelect={() => onSelect(s.number)} />

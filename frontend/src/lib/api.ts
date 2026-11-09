@@ -119,5 +119,7 @@ export const api = {
     request<WordListEntry[]>(`/words${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   word: (id: number) => request<{ word: WordDetail; card: CardSummary | null }>(`/words/${id}`),
   tutor: (id: number, messages: ChatMessage[]) => post<{ reply: string }>(`/words/${id}/tutor`, { messages }),
+  studyChat: (itemId: string, messages: ChatMessage[]) =>
+    post<{ reply: string; counted_as_hint: boolean }>(`/study/items/${itemId}/chat`, { messages }),
   mnemonic: (id: number) => post<{ mnemonic: string }>(`/words/${id}/mnemonic`),
 }

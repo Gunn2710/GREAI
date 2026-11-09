@@ -72,7 +72,10 @@ export default function Dashboard() {
               <div className="flex items-baseline gap-2">
                 <h2 className="font-semibold">Set {stats.sets.current.number}</h2>
                 <span className="text-sm text-muted-foreground">
-                  of {stats.sets.total} · {FREQUENCY_LABEL[stats.sets.current.tier]}
+                  of {stats.sets.total} ·{' '}
+                  {stats.sets.current.source === 'gregmat'
+                    ? 'GregMat group'
+                    : FREQUENCY_LABEL[stats.sets.current.tier]}
                 </span>
               </div>
               <Button variant="ghost" size="sm" asChild>

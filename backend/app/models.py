@@ -61,8 +61,8 @@ class Word(Base):
     skill_id: Mapped[str] = mapped_column(ForeignKey("skills.id"))
     tier: Mapped[int] = mapped_column(Integer, default=1)  # 1 = most common on the GRE
     global_difficulty: Mapped[float] = mapped_column(Float, default=0.0)
-    # Study sets of 20-30 words, most common first (assigned by the bank sync,
-    # see app/seed/seed.py). set_rank is the word's place in the whole order.
+    # Study sets: GregMat's groups, then the rest most common first (assigned
+    # by the bank sync, see app/seed/seed.py). set_rank is the word's place in the whole order.
     set_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
     set_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

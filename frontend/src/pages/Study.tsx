@@ -13,7 +13,9 @@ import { cn } from '@/lib/utils'
 import { CardStats, DEPTH_LABEL, TIER_LABEL, formatDue } from '../components/Comfort'
 import { Question, type Submit } from '../components/Question'
 import { SetProgress } from '../components/Sets'
+import { StudyTutor } from '../components/StudyTutor'
 import { WordCard } from '../components/WordCard'
+import { useConfig } from '../lib/config'
 import { api, ApiError } from '../lib/api'
 import type { AnswerResult, StudyFormat, StudyItem, WordSet } from '../lib/types'
 
@@ -23,6 +25,7 @@ const FORMATS: { format: StudyFormat; label: string }[] = [
   { format: 'mcq', label: 'Multiple choice' },
 ]
 const FORMAT_KEY = 'study-format'
+const TUTOR_KEY = 'study-tutor-open'
 
 /** The last format picked, remembered per browser (a convenience only). */
 function savedFormat(): StudyFormat {
@@ -35,8 +38,12 @@ function savedFormat(): StudyFormat {
 }
 
 function saveFormat(format: StudyFormat) {
+  savePref(FORMAT_KEY, format)
+}
+
+function savePref(key: string, value: string) {
   try {
-    localStorage.setItem(FORMAT_KEY, format)
+    localStorage.setItem(key, value)
   } catch {
     // storage blocked: the choice just won't be remembered
   }
@@ -55,6 +62,20 @@ export default function Study() {
   const [count, setCount] = useState(0)
   const [set, setSet] = useState<(WordSet & { total: number }) | null>(null)
   const [format, setFormat] = useState<StudyFormat>(savedFormat)
+  const { ai_enabled } = useConfig()
+  const [tutorOpen, setTutorOpen] = useState(() => {
+    try {
+      return localStorage.getItem(TUTOR_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggleTutor = () => {
+    setTutorOpen((open) => {
+      savePref(TUTOR_KEY, open ? '0' : '1')
+      return !open
+    })
+  }
 
   const loadNext = useCallback(async () => {
     setPhase({ kind: 'loading' })
@@ -104,7 +125,9 @@ export default function Study() {
   useEffect(() => {
     if (phase.kind !== 'result') return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') loadNext()
+      // Enter moves on, unless it's sending a message to the tutor.
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
+      if (e.key === 'Enter' && !typing) loadNext()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -209,6 +232,16 @@ export default function Study() {
       )}
 
       {phase.kind === 'result' && <Result {...phase} onNext={loadNext} />}
+
+      {ai_enabled && (phase.kind === 'question' || phase.kind === 'result') && (
+        <StudyTutor
+          key={phase.item.id}
+          item={phase.item}
+          answered={phase.kind === 'result'}
+          open={tutorOpen}
+          onToggle={toggleTutor}
+        />
+      )}
     </div>
   )
 }

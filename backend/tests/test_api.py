@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.items.base import get_item_type
 from app.items.vocab import related
 from app.models import Card, Confusion, IssuedItem, Word, utcnow
-from app.seed.seed import TOP_SOURCE, assign_sets, load_bank, sync_bank, validate_bank
+from app.seed.seed import TOP_SOURCE, assign_sets, load_bank, load_groups, sync_bank, validate_bank
 from app.services import ai
 
 BANK_META, BANK_WORDS = load_bank()
@@ -68,7 +68,7 @@ def test_new_word_flow(client, db):
     assert item["item_type"] == "flashcard"
     assert "back" in item["payload"]
     assert item["payload"]["pronunciation"] and item["payload"]["back"]["pronunciation"]
-    assert len(item["payload"]["back"]["phrases"]) == 3
+    assert 2 <= len(item["payload"]["back"]["phrases"]) <= 4
     assert "answer" not in item
 
     out = client.post(
@@ -241,11 +241,12 @@ def test_sync_is_idempotent_and_updates(client, db):
     assert word.tier == 1
 
 
-def test_new_words_start_with_high_frequency(client, db):
+def test_new_words_start_with_gregmat_group_1(client, db):
     h = headers("frank")
     res = client.get("/api/study/next", headers=h).json()
     item = db.get(IssuedItem, res["item"]["id"])
-    assert db.get(Word, item.word_id).tier == 1
+    assert db.get(Word, item.word_id).lemma == load_groups()[0][0]
+    assert res["set"]["number"] == 1 and res["set"]["source"] == "gregmat"
 
 
 def test_bank_splits_into_sets_most_common_first():
@@ -268,6 +269,30 @@ def test_bank_splits_into_sets_most_common_first():
     ranked = sorted(sets.values(), key=lambda v: v[1])
     assert [r for _, r in ranked] == list(range(1, len(sets) + 1))
     assert [n for n, _ in ranked] == sorted(n for n, _ in ranked)
+
+
+def test_sets_follow_the_gregmat_groups():
+    groups = load_groups()
+    assert len(groups) == 32 and all(len(g) == 30 for g in groups)
+    grouped = {lemma for g in groups for lemma in g}
+    assert grouped <= {w["lemma"] for w in BANK_WORDS}  # every listed word has an entry
+    sets = assign_sets(BANK_WORDS, groups)
+    for n, group in enumerate(groups, 1):
+        for lemma in group:
+            first = next(i for i, g in enumerate(groups, 1) if lemma in g)
+            assert sets[lemma][0] == first  # a word listed twice stays in its first group
+    # Group order is the study order, and the rest of the bank comes after.
+    ranked = [lemma for lemma, _ in sorted(sets.items(), key=lambda kv: kv[1][1])]
+    assert ranked[:30] == groups[0]
+    rest = [v for lemma, v in sets.items() if lemma not in grouped]
+    assert rest and min(n for n, _ in rest) == 33
+    assert [n for n, _ in sorted(sets.values(), key=lambda v: v[1])] == sorted(n for n, _ in sets.values())
+
+
+def test_groups_skip_duplicates_and_missing_words():
+    words = [{"lemma": l, "tier": 1, "cluster": "c"} for l in ("ant", "bee", "cat", "dog")]
+    sets = assign_sets(words, [["bee", "ant"], ["ant", "yak"], ["zebra"], ["cat"]])
+    assert sets == {"bee": (1, 1), "ant": (1, 2), "cat": (2, 3), "dog": (3, 4)}
 
 
 def test_new_words_come_from_the_current_set(client, db):
@@ -370,3 +395,88 @@ def test_study_more_is_for_today_only(client, db):
     db.commit()
     assert client.post("/api/study/more", json={"words": 2}, headers=h).json()["extra_today"] == 2
     assert client.post("/api/study/more", json={"words": 0}, headers=h).status_code == 422
+
+
+class FakeClaude:
+    """Stands in for the Messages API: replays canned responses, records calls."""
+
+    def __init__(self, *responses):
+        self.responses, self.calls = list(responses), []
+
+    async def __call__(self, **params):
+        self.calls.append({**params, "messages": list(params["messages"])})
+        return self.responses.pop(0)
+
+
+def _text(text):
+    from types import SimpleNamespace as NS
+    return NS(stop_reason="end_turn", content=[NS(type="text", text=text)])
+
+
+def _tool(name, **args):
+    from types import SimpleNamespace as NS
+    return NS(stop_reason="tool_use", content=[NS(type="tool_use", id="tu_1", name=name, input=args)])
+
+
+def _mcq_item(client, h):
+    res = client.get("/api/study/next?format=mcq", headers=h).json()
+    return res["item"]
+
+
+def test_study_chat_coaches_without_answering_first(client, db, monkeypatch):
+    h = headers("chatty")
+    item = _mcq_item(client, h)
+    word = db.get(Word, db.get(IssuedItem, item["id"]).word_id)
+    other = db.scalar(select(Word).where(Word.id != word.id).limit(1))
+    fake = FakeClaude(_tool("look_up_word", word=other.lemma.upper()), _text("Think about the root."))
+    monkeypatch.setattr(ai.claude, "_create", fake)
+
+    res = client.post(f"/api/study/items/{item['id']}/chat", headers=h,
+                      json={"messages": [{"role": "user", "content": "What's the answer?"}]}).json()
+    assert res == {"reply": "Think about the root.", "counted_as_hint": True}
+    system = fake.calls[0]["system"]
+    assert "HAS NOT ANSWERED YET" in system and "Correct answer:" in system and word.lemma in system
+    # The tool ran against the word bank and its result went back to Claude.
+    tool_result = fake.calls[1]["messages"][-1]["content"][0]
+    assert tool_result["type"] == "tool_result" and other.definition in tool_result["content"]
+    db.expire_all()
+    assert db.get(IssuedItem, item["id"]).hint_used
+
+
+def test_study_chat_explains_freely_after_answering(client, db, monkeypatch):
+    h = headers("after")
+    item = _mcq_item(client, h)
+    client.post(f"/api/study/items/{item['id']}/answer", headers=h,
+                json={"response": {"selected": 0}, "response_ms": 4000})
+    fake = FakeClaude(_tool("student_history"), _text("Here's why."))
+    monkeypatch.setattr(ai.claude, "_create", fake)
+
+    res = client.post(f"/api/study/items/{item['id']}/chat", headers=h,
+                      json={"messages": [{"role": "user", "content": "Why?"}]}).json()
+    assert res == {"reply": "Here's why.", "counted_as_hint": False}
+    system = fake.calls[0]["system"]
+    assert "has answered" in system and "Chose A" in system
+    history = fake.calls[1]["messages"][-1]["content"][0]["content"]
+    assert '"recent_attempts": [{' in history
+
+
+def test_study_chat_is_private(client, monkeypatch):
+    item = _mcq_item(client, headers("owner"))
+    monkeypatch.setattr(ai.claude, "_create", FakeClaude(_text("hi")))
+    res = client.post(f"/api/study/items/{item['id']}/chat", headers=headers("someone-else"),
+                      json={"messages": [{"role": "user", "content": "hi"}]})
+    assert res.status_code == 404
+
+
+def test_both_tutors_carry_the_topic_rules(client, db, monkeypatch):
+    h = headers("scoped")
+    item = _mcq_item(client, h)
+    fake = FakeClaude(_text("ok"), _text("ok"))
+    monkeypatch.setattr(ai.claude, "_create", fake)
+    monkeypatch.setattr(ai.claude.settings, "ai_enabled", True)
+    msgs = {"messages": [{"role": "user", "content": "what is 5 times 5"}]}
+    client.post(f"/api/study/items/{item['id']}/chat", headers=h, json=msgs)
+    word_id = db.get(IssuedItem, item["id"]).word_id
+    client.post(f"/api/words/{word_id}/tutor", headers=h, json=msgs)
+    assert len(fake.calls) == 2
+    assert all(ai.TUTOR_SCOPE in call["system"] for call in fake.calls)
