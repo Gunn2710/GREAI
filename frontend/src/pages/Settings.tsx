@@ -65,7 +65,7 @@ export default function Settings() {
                 onChange={(e) => setProfile({ ...profile, target_verbal: num(e.target.value) })}
               />
             </Field>
-            <Field id="target-quant" label="Target Quant score" note="Quant practice coming later">
+            <Field id="target-quant" label="Target Quant score">
               <Input
                 id="target-quant"
                 type="number"

@@ -100,10 +100,13 @@ def dashboard(user_id: str = Depends(current_user_id), db: Session = Depends(get
     return stats.dashboard(db, user_id)
 
 
-# ---- verbal practice (Text Completion, Sentence Equivalence) ------------------
+# ---- practice (Verbal and Quant question types) -----------------------------
+
+PracticeKind = Literal["tc", "se", "rc", "mixed", "qc", "qmc", "qne", "quant"]
+
 
 @router.get("/practice/next")
-def practice_next(kind: Literal["tc", "se", "mixed"] = "mixed", user_id: str = Depends(current_user_id),
+def practice_next(kind: PracticeKind = "mixed", user_id: str = Depends(current_user_id),
                   db: Session = Depends(get_db)):
     return practice.next_item(db, user_id, kind)
 

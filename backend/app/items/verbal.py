@@ -4,6 +4,8 @@
         otherwise; credit only if every blank is right.
     se  Sentence Equivalence: one blank, 6 options, pick the two that each
         complete the sentence with the same meaning.
+    rc  Reading Comprehension: a passage and one question about it; either
+        pick one of 5 options or select every right one of 3.
 """
 import random
 import re
@@ -100,5 +102,49 @@ class SentenceEquivalence(ItemType):
         return {"clue": item.answer["clue"]}
 
 
+def passage_words(db, passage: str) -> list[dict]:
+    """Bank words that appear in a passage as written."""
+    return bank_words(db, sorted(set(re.findall(r"[a-z]+", passage.lower()))))
+
+
+class ReadingComprehension(ItemType):
+    name, section, hint_available = "rc", "verbal", True
+
+    def build(self, db, user_id, item: Item) -> BuiltItem:
+        c = item.content
+        options = c["options"][:]
+        correct = set(options[: 1 if c["select"] == "one" else c["correct"]])  # authored first
+        random.Random().shuffle(options)
+        return BuiltItem(
+            payload={
+                "passage": c["passage"], "topic": c["topic"], "order": c["order"], "of": c["of"],
+                "question": c["question"], "options": options, "select": c["select"],
+                "difficulty": item.difficulty_label,
+            },
+            answer={
+                "indices": sorted(i for i, o in enumerate(options) if o in correct),
+                "clue": c["clue"],
+                "explanation": c["explanation"],
+            },
+        )
+
+    async def grade(self, db, item, response) -> Grade:
+        selected = response.get("selected")
+        answer = item.answer["indices"]
+        ok = isinstance(selected, list) and sorted(selected) == answer
+        return Grade(
+            correct=ok, score=1.0 if ok else 0.0,
+            feedback={
+                "correct_indices": answer,
+                "explanation": item.answer["explanation"],
+                "words": passage_words(db, item.payload["passage"]),
+            },
+        )
+
+    def hint(self, item):
+        return {"clue": item.answer["clue"]}
+
+
 register(TextCompletion())
 register(SentenceEquivalence())
+register(ReadingComprehension())

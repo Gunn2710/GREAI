@@ -1,0 +1,32 @@
+{
+  "_format": "Original Quantitative Comparison items. `info` (optional) is shown centered above the quantities. `answer` is A (Quantity A is greater), B (Quantity B is greater), C (equal) or D (cannot be determined). The four choices are fixed and never shuffled.",
+  "items": [
+    {"slug": "qc-01", "difficulty": "easy", "topic": "arithmetic",
+     "quantity_a": "3/7", "quantity_b": "0.43", "answer": "B",
+     "clue": "Turn 3/7 into a decimal, or compare 3/7 with 43/100 by cross-multiplying.",
+     "explanation": "3 ÷ 7 = 0.428…, which is less than 0.43. Or cross-multiply 3/7 and 43/100: 3 × 100 = 300 and 7 × 43 = 301. Since 300 < 301, 3/7 < 0.43, so Quantity B is greater."},
+    {"slug": "qc-02", "difficulty": "medium", "topic": "algebra",
+     "info": "x² = 4x", "quantity_a": "x", "quantity_b": "4", "answer": "D",
+     "clue": "Don't divide both sides by x. What if x = 0?",
+     "explanation": "Rewrite as x² − 4x = 0, so x(x − 4) = 0 and x is 0 or 4. If x = 4 the quantities are equal; if x = 0, Quantity B is greater. Since the answer depends on which value x takes, the relationship cannot be determined. Dividing both sides by x is the trap: it silently drops the solution x = 0."},
+    {"slug": "qc-03", "difficulty": "medium", "topic": "geometry",
+     "info": "A triangle has sides of length 5, 12, and 13.",
+     "quantity_a": "The area of the triangle", "quantity_b": "30", "answer": "C",
+     "clue": "Check whether 5² + 12² equals 13².",
+     "explanation": "5² + 12² = 25 + 144 = 169 = 13², so this is a right triangle with legs 5 and 12. Its area is ½ × 5 × 12 = 30, the same as Quantity B."},
+    {"slug": "qc-04", "difficulty": "hard", "topic": "data",
+     "info": "The average (arithmetic mean) of five numbers is 12. When one of the numbers is removed, the average of the remaining four numbers is 9.5.",
+     "quantity_a": "The number that was removed", "quantity_b": "20", "answer": "A",
+     "clue": "Work with sums instead of averages.",
+     "explanation": "The five numbers add up to 5 × 12 = 60, and the remaining four add up to 4 × 9.5 = 38. The removed number is 60 − 38 = 22, which is greater than 20."},
+    {"slug": "qc-05", "difficulty": "hard", "topic": "arithmetic",
+     "info": "p and q are prime numbers, and p + q = 15.",
+     "quantity_a": "pq", "quantity_b": "27", "answer": "B",
+     "clue": "Two odd numbers always add up to an even number.",
+     "explanation": "Every prime except 2 is odd, and two odd numbers add up to an even number. Since 15 is odd, one of the primes must be 2, and the other is 13, which is also prime. So pq = 2 × 13 = 26, which is less than 27."},
+    {"slug": "qc-06", "difficulty": "medium", "topic": "algebra",
+     "info": "0 < x < 1", "quantity_a": "√x", "quantity_b": "x²", "answer": "A",
+     "clue": "Try a value such as x = 1/4.",
+     "explanation": "For a number between 0 and 1, squaring makes it smaller and taking the square root makes it larger, so x² < x < √x. With x = 1/4, for example, √x = 1/2 and x² = 1/16. Quantity A is greater for every x in the range."}
+  ]
+}

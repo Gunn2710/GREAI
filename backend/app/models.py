@@ -68,7 +68,7 @@ class Word(Base):
 
 
 class Item(Base):
-    """A stored question (Text Completion, Sentence Equivalence; later Quant)."""
+    """A stored question (Verbal: TC, SE, RC; Quant: comparison, multiple choice, numeric entry)."""
 
     __tablename__ = "items"
 
@@ -80,7 +80,7 @@ class Item(Base):
     difficulty_label: Mapped[str] = mapped_column(String(16))  # easy / medium / hard
     difficulty_prior: Mapped[float] = mapped_column(Float, default=0.0)
     difficulty_offset: Mapped[float] = mapped_column(Float, default=0.0)  # learned from answers
-    content: Mapped[dict] = mapped_column(JSONB)  # authored content; see app/seed/verbal
+    content: Mapped[dict] = mapped_column(JSONB)  # authored content; see app/seed/verbal, app/seed/quant
     status: Mapped[str] = mapped_column(String(16), default="active")
 
     @property

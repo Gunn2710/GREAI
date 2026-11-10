@@ -183,20 +183,51 @@ export type PlacementStep =
   | { done: false; item: PlacementItem; run_id?: string }
   | { done: true; result: PlacementResult }
 
-export type PracticeKind = 'tc' | 'se' | 'mixed'
+/** A single question type, or a mix: 'mixed' is Verbal, 'quant' is Quant. */
+export type PracticeType = 'tc' | 'se' | 'rc' | 'qc' | 'qmc' | 'qne'
+export type PracticeKind = PracticeType | 'mixed' | 'quant'
 export type StudyFormat = 'mixed' | 'flashcard' | 'mcq'
+
+export interface DataTable {
+  columns: string[]
+  rows: string[][]
+}
 
 export interface PracticeItem {
   id: string
-  item_type: 'tc' | 'se'
+  item_type: PracticeType
   kind_name: string
   hint_available: boolean
   payload: {
-    text: string
-    blanks?: string[][]
-    options?: string[]
     difficulty: 'easy' | 'medium' | 'hard'
+    /** tc / se */
+    text?: string
+    blanks?: string[][]
+    /** se, rc, qc, qmc */
+    options?: string[]
+    /** rc / qmc: pick one, or select every right option */
+    select?: 'one' | 'all'
+    /** rc */
+    passage?: string
+    question?: string
+    order?: number
+    of?: number
+    /** rc passage topic, or quant topic (arithmetic, algebra, geometry, data) */
+    topic?: string
+    /** quant */
+    table?: DataTable | null
+    info?: string | null
+    quantity_a?: string
+    quantity_b?: string
+    unit?: string | null
+    fraction?: boolean
   }
+}
+
+/** What the learner sent: chosen option indices, or a typed value for numeric entry. */
+export interface PracticeResponse {
+  selected?: number[]
+  value?: string
 }
 
 export interface PracticeResult {
@@ -205,14 +236,25 @@ export interface PracticeResult {
   rating_before: number
   rating_after: number
   feedback: {
-    correct_indices: number[]
     explanation: string
-    filled_text: string
-    words: { id: number; lemma: string; definition: string }[]
+    correct_indices?: number[]
+    /** numeric entry */
+    correct_answer?: string
+    /** tc / se */
+    filled_text?: string
+    /** bank words among the options (tc / se) or in the passage (rc) */
+    words?: { id: number; lemma: string; definition: string }[]
   }
 }
 
 export type PracticeSummary = Record<
-  'tc' | 'se',
-  { name: string; rating: number | null; attempts: number; accuracy: number | null; questions: number }
+  PracticeType,
+  {
+    name: string
+    section: 'verbal' | 'quant'
+    rating: number | null
+    attempts: number
+    accuracy: number | null
+    questions: number
+  }
 >
