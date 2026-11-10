@@ -1,7 +1,8 @@
 import { ArrowRight, Lightbulb, Sparkles, Square, SquareCheck } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { OptionButton, OptionResult, Verdict } from '@/components/Option'
+import { Answer, AnswerReview, FormatTag, Stem } from '@/components/PracticeFormats'
 import { HintButton, ModeTag } from '@/components/Question'
 import { ErrorAlert, LoadingCard } from '@/components/Status'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -11,13 +12,39 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { api, ApiError } from '../lib/api'
-import type { PracticeItem, PracticeKind, PracticeResult, PracticeSummary } from '../lib/types'
+import type {
+  PracticeItem,
+  PracticeKind,
+  PracticeResponse,
+  PracticeResult,
+  PracticeSummary,
+  PracticeType,
+} from '../lib/types'
 
-const KINDS: { kind: PracticeKind; label: string }[] = [
-  { kind: 'mixed', label: 'Mixed' },
-  { kind: 'tc', label: 'Text Completion' },
-  { kind: 'se', label: 'Sentence Equivalence' },
-]
+type Section = 'verbal' | 'quant'
+
+const SECTIONS: Record<Section, { label: string; kinds: { kind: PracticeKind; label: string }[] }> = {
+  verbal: {
+    label: 'Verbal',
+    kinds: [
+      { kind: 'mixed', label: 'Mixed' },
+      { kind: 'tc', label: 'Completion' },
+      { kind: 'se', label: 'Equivalence' },
+      { kind: 'rc', label: 'Reading' },
+    ],
+  },
+  quant: {
+    label: 'Quant',
+    kinds: [
+      { kind: 'quant', label: 'Mixed' },
+      { kind: 'qc', label: 'Comparison' },
+      { kind: 'qmc', label: 'Choice' },
+      { kind: 'qne', label: 'Numeric' },
+    ],
+  },
+}
+const isSection = (s: string | null): s is Section => s === 'verbal' || s === 'quant'
+const isBlankType = (t: PracticeType) => t === 'tc' || t === 'se'
 const ROMAN = ['i', 'ii', 'iii']
 /** Answer columns side by side for 2-3 blanks, stacked on phones. */
 const BLANK_COLUMNS: Record<number, string> = { 1: '', 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3' }
@@ -33,11 +60,16 @@ function levelLabel(rating: number): string {
 type Phase =
   | { kind: 'loading' }
   | { kind: 'question'; item: PracticeItem }
-  | { kind: 'result'; item: PracticeItem; result: PracticeResult; selected: number[] }
+  | { kind: 'result'; item: PracticeItem; result: PracticeResult; response: PracticeResponse }
   | { kind: 'error'; message: string }
 
 export default function Practice() {
-  const [kind, setKind] = useState<PracticeKind>('mixed')
+  const [params, setParams] = useSearchParams()
+  const section: Section = isSection(params.get('section')) ? (params.get('section') as Section) : 'verbal'
+  const kinds = SECTIONS[section].kinds
+  const asked = params.get('kind')
+  const kind = kinds.find((k) => k.kind === asked)?.kind ?? kinds[0].kind
+  const setKind = (k: PracticeKind) => setParams({ section, kind: k }, { replace: true })
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' })
   const [summary, setSummary] = useState<PracticeSummary | null>(null)
 
@@ -68,31 +100,44 @@ export default function Practice() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-      <Tabs value={kind} onValueChange={(v) => setKind(v as PracticeKind)}>
-        <TabsList className="w-full sm:w-fit" aria-label="Question type">
-          {KINDS.map((k) => (
-            <TabsTrigger key={k.kind} value={k.kind} className="sm:px-3">
-              {k.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Tabs value={section} onValueChange={(v) => setParams({ section: v }, { replace: true })}>
+          <TabsList className="w-full sm:w-fit" aria-label="Section">
+            {(Object.keys(SECTIONS) as Section[]).map((s) => (
+              <TabsTrigger key={s} value={s} className="sm:px-3">
+                {SECTIONS[s].label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <Tabs value={kind} onValueChange={(v) => setKind(v as PracticeKind)}>
+          <TabsList className="w-full sm:w-fit" aria-label="Question type">
+            {kinds.map((k) => (
+              <TabsTrigger key={k.kind} value={k.kind} className="px-1.5 sm:px-3">
+                {k.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
 
       {summary && (
-        <div className="grid grid-cols-2 gap-4">
-          {(['tc', 'se'] as const).map((k) => (
-            <Card key={k} className="gap-1 px-4 py-4">
-              <div className="text-xs text-muted-foreground">{summary[k].name}</div>
-              <div className="text-2xl font-semibold tracking-tight">
-                {summary[k].rating == null ? '–' : levelLabel(summary[k].rating!)}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {summary[k].attempts
-                  ? `${summary[k].attempts} answered · ${Math.round((summary[k].accuracy ?? 0) * 100)}% correct`
-                  : `${summary[k].questions} questions`}
-              </div>
-            </Card>
-          ))}
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
+          {(Object.keys(summary) as PracticeType[])
+            .filter((k) => summary[k].section === section)
+            .map((k) => (
+              <Card key={k} className="gap-1 px-3 py-3 sm:px-4 sm:py-4">
+                <div className="text-xs text-muted-foreground">{summary[k].name}</div>
+                <div className="text-xl font-semibold tracking-tight sm:text-2xl">
+                  {summary[k].rating == null ? '–' : levelLabel(summary[k].rating!)}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {summary[k].attempts
+                    ? `${summary[k].attempts} answered · ${Math.round((summary[k].accuracy ?? 0) * 100)}% correct`
+                    : `${summary[k].questions} questions`}
+                </div>
+              </Card>
+            ))}
         </div>
       )}
 
@@ -109,7 +154,7 @@ export default function Practice() {
         <Question
           key={phase.item.id}
           item={phase.item}
-          onAnswered={(result, selected) => setPhase({ kind: 'result', item: phase.item, result, selected })}
+          onAnswered={(result, response) => setPhase({ kind: 'result', item: phase.item, result, response })}
           onError={(message) => setPhase({ kind: 'error', message })}
         />
       )}
@@ -143,15 +188,66 @@ function Passage({ text, fills, multi }: { text: string; fills: (string | null)[
   )
 }
 
-function Question({
-  item,
-  onAnswered,
-  onError,
-}: {
+interface QuestionProps {
   item: PracticeItem
-  onAnswered: (r: PracticeResult, selected: number[]) => void
+  onAnswered: (r: PracticeResult, response: PracticeResponse) => void
   onError: (m: string) => void
-}) {
+}
+
+function Question(props: QuestionProps) {
+  return isBlankType(props.item.item_type) ? <BlankQuestion {...props} /> : <FormatQuestion {...props} />
+}
+
+/** Reading Comprehension and Quant (see components/PracticeFormats). */
+function FormatQuestion({ item, onAnswered, onError }: QuestionProps) {
+  const shownAt = useRef(performance.now())
+  const [response, setResponse] = useState<PracticeResponse | null>(null)
+  const [clue, setClue] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function hint() {
+    setClue((await api.practiceHint(item.id)).clue)
+  }
+
+  async function submit() {
+    if (!response || busy) return
+    setBusy(true)
+    try {
+      onAnswered(await api.practiceAnswer(item.id, { ...response }, performance.now() - shownAt.current), response)
+    } catch (e) {
+      onError(e instanceof ApiError ? e.message : 'Could not submit your answer')
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-4">
+        <FormatTag item={item} />
+        <Stem item={item} />
+        <Answer item={item} disabled={busy} onChange={setResponse} onSubmit={submit} />
+        {clue && <Clue clue={clue} />}
+        <div className="flex items-center justify-between gap-2">
+          <HintButton used={!!clue} disabled={busy} onHint={hint} />
+          <Button disabled={!response || busy} onClick={submit}>
+            Check answer
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function Clue({ clue }: { clue: string }) {
+  return (
+    <Alert>
+      <Lightbulb />
+      <AlertDescription className="text-foreground">Clue: {clue}</AlertDescription>
+    </Alert>
+  )
+}
+
+/** Text Completion and Sentence Equivalence. */
+function BlankQuestion({ item, onAnswered, onError }: QuestionProps) {
   const shownAt = useRef(performance.now())
   const isTc = item.item_type === 'tc'
   const blanks = item.payload.blanks ?? []
@@ -180,7 +276,7 @@ function Question({
     setBusy(true)
     const response = { selected: selected as number[] }
     try {
-      onAnswered(await api.practiceAnswer(item.id, response, performance.now() - shownAt.current), selected as number[])
+      onAnswered(await api.practiceAnswer(item.id, response, performance.now() - shownAt.current), response)
     } catch (e) {
       onError(e instanceof ApiError ? e.message : 'Could not submit your answer')
     }
@@ -193,7 +289,7 @@ function Question({
           {item.kind_name}
           {isTc && blanks.length > 1 && ` · ${blanks.length} blanks`} · {item.payload.difficulty}
         </ModeTag>
-        <Passage text={item.payload.text} fills={fills} multi={blanks.length > 1} />
+        <Passage text={item.payload.text!} fills={fills} multi={blanks.length > 1} />
 
         {isTc ? (
           <>
@@ -247,12 +343,7 @@ function Question({
           </>
         )}
 
-        {clue && (
-          <Alert>
-            <Lightbulb />
-            <AlertDescription className="text-foreground">Clue: {clue}</AlertDescription>
-          </Alert>
-        )}
+        {clue && <Clue clue={clue} />}
         <div className="flex items-center justify-between gap-2">
           <HintButton used={!!clue} disabled={busy} onHint={hint} />
           <Button disabled={!complete || busy} onClick={submit}>
@@ -271,46 +362,28 @@ function ColumnHead({ children }: { children: ReactNode }) {
 function Result({
   item,
   result,
-  selected,
+  response,
   onNext,
 }: {
   item: PracticeItem
   result: PracticeResult
-  selected: number[]
+  response: PracticeResponse
   onNext: () => void
 }) {
-  const isTc = item.item_type === 'tc'
-  const blanks = item.payload.blanks ?? []
-  const correct = result.feedback.correct_indices
   const delta = result.rating_after - result.rating_before
+  const words = result.feedback.words ?? []
 
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
         <Verdict ok={result.correct}>{result.correct ? 'Correct' : 'Not quite'}</Verdict>
-        <p className="text-lg leading-8">{result.feedback.filled_text}</p>
-
-        {isTc ? (
-          <div className={cn('grid gap-3', BLANK_COLUMNS[blanks.length])}>
-            {blanks.map((opts, b) => (
-              <div key={b} className="flex flex-col gap-2">
-                {blanks.length > 1 && <ColumnHead>Blank ({ROMAN[b]})</ColumnHead>}
-                {opts.map((opt, o) => (
-                  <OptionResult key={o} state={correct[b] === o ? 'correct' : selected[b] === o ? 'wrong' : 'idle'}>
-                    {opt}
-                  </OptionResult>
-                ))}
-              </div>
-            ))}
-          </div>
+        {isBlankType(item.item_type) ? (
+          <BlankReview item={item} result={result} selected={response.selected ?? []} />
         ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {item.payload.options!.map((opt, o) => (
-              <OptionResult key={o} state={correct.includes(o) ? 'correct' : selected.includes(o) ? 'wrong' : 'idle'}>
-                {opt}
-              </OptionResult>
-            ))}
-          </div>
+          <>
+            <Stem item={item} />
+            <AnswerReview item={item} result={result} response={response} />
+          </>
         )}
 
         <Alert>
@@ -331,11 +404,13 @@ function Result({
           <span className="text-muted-foreground">Difficulty: {result.difficulty}</span>
         </div>
 
-        {result.feedback.words.length > 0 && (
+        {words.length > 0 && (
           <div className="flex flex-col gap-2">
-            <span className="text-xs text-muted-foreground">Vocabulary in this question</span>
+            <span className="text-xs text-muted-foreground">
+              {item.item_type === 'rc' ? 'Vocabulary in this passage' : 'Vocabulary in this question'}
+            </span>
             <div className="flex flex-wrap gap-1.5">
-              {result.feedback.words.map((w) => (
+              {words.map((w) => (
                 <Badge key={w.id} variant="outline" className="px-2.5 py-1 text-sm font-normal" asChild>
                   <Link to={`/words/${w.id}`} title={w.definition}>
                     {w.lemma}
@@ -355,5 +430,38 @@ function Result({
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+function BlankReview({ item, result, selected }: { item: PracticeItem; result: PracticeResult; selected: number[] }) {
+  const isTc = item.item_type === 'tc'
+  const blanks = item.payload.blanks ?? []
+  const correct = result.feedback.correct_indices ?? []
+  return (
+    <>
+      <p className="text-lg leading-8">{result.feedback.filled_text}</p>
+      {isTc ? (
+        <div className={cn('grid gap-3', BLANK_COLUMNS[blanks.length])}>
+          {blanks.map((opts, b) => (
+            <div key={b} className="flex flex-col gap-2">
+              {blanks.length > 1 && <ColumnHead>Blank ({ROMAN[b]})</ColumnHead>}
+              {opts.map((opt, o) => (
+                <OptionResult key={o} state={correct[b] === o ? 'correct' : selected[b] === o ? 'wrong' : 'idle'}>
+                  {opt}
+                </OptionResult>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {item.payload.options!.map((opt, o) => (
+            <OptionResult key={o} state={correct.includes(o) ? 'correct' : selected.includes(o) ? 'wrong' : 'idle'}>
+              {opt}
+            </OptionResult>
+          ))}
+        </div>
+      )}
+    </>
   )
 }

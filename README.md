@@ -95,14 +95,36 @@ cd backend && GRE_AUTH_MODE=dev GRE_DATABASE_URL=postgresql://gre:gre@localhost:
 cd frontend && VITE_CLERK_PUBLISHABLE_KEY= GRE_API_TARGET=http://localhost:8001 npm run dev -- --port 5174
 ```
 
-## Verbal practice: Text Completion and Sentence Equivalence
+## Practice: Verbal and Quant
 
-The Practice page (`/practice`) serves original questions from `backend/app/seed/verbal/`: 25 Text Completion and 15 Sentence Equivalence. They're synced into the `items` table on startup, matched by slug.
+The Practice page (`/practice`) serves original questions from `backend/app/seed/`, synced into the `items` table on startup and matched by slug. A Verbal / Quant switch picks the section; `?section=quant&kind=qc` links straight to a type.
 
-- **Format and scoring.** Text Completion has 1–3 blanks: 5 choices for one blank, 3 per blank otherwise, with credit only if every blank is right. Sentence Equivalence has 6 choices; you pick the two that each complete the sentence with the same meaning. Every SE question includes a trap pair: two synonyms that fit together but not the sentence.
-- **Authoring.** The first option of each blank (TC) or the first two options (SE) are correct; options are shuffled when a question is served. Each question has a clue (the hint) and an explanation. `validate_items` in `app/seed/items.py` enforces the format.
-- **Ratings.** Each user has a rating per skill (`user_skills`: `verbal.tc`, `verbal.se`), starting from the placement level when there is one. Questions are picked near the rating, unseen first, with nothing answered in the last 14 days repeated. After each answer, an Elo update in the engine moves both the rating and the question's learned difficulty, using the chance of guessing right (1/5, 1/9, 1/27 for 1–3 blanks; 1/15 for SE). Answers that used the hint count half.
-- **Separate stats.** Practice answers go into `attempts` but don't count toward the dashboard's vocabulary numbers.
+| Section | Type | Count | Source file |
+| --- | --- | --- | --- |
+| Verbal | Text Completion (`tc`) | 25 | `verbal/text_completion.json` |
+| Verbal | Sentence Equivalence (`se`) | 15 | `verbal/sentence_equivalence.json` |
+| Verbal | Reading Comprehension (`rc`) | 12, on 3 passages | `verbal/reading_comprehension.json` |
+| Quant | Quantitative Comparison (`qc`) | 6 | `quant/comparison.json` |
+| Quant | Multiple choice (`qmc`) | 6 | `quant/multiple_choice.json` |
+| Quant | Numeric entry (`qne`) | 5 | `quant/numeric_entry.json` |
+
+- **Format and scoring.**
+  - Text Completion has 1–3 blanks: 5 choices for one blank, 3 per blank otherwise. You only get credit if every blank is right.
+  - Sentence Equivalence has 6 choices; you pick the two that each complete the sentence with the same meaning. Every SE question includes a trap pair: two synonyms that fit together but not the sentence.
+  - Reading Comprehension questions ask you either to pick one of 5 choices or to select every right choice of 3. All the questions on a passage are served together, in order.
+  - Quant comparisons use the GRE's four fixed choices. Multiple-choice questions either have one answer of 5 or ask for all that apply. Numeric entry accepts any equivalent value, so `4/36` counts for `1/9`.
+  - "Select all" questions need every right choice and no wrong ones.
+- **Authoring.**
+  - Verbal: the first option of each blank (TC), the first two options (SE), and the first option(s) of each RC question are correct. Options are shuffled when a question is served.
+  - Quant: answers are stated explicitly, because options stay in their written order (numbers ascending, as on the GRE).
+  - Every question has a clue (the hint) and an explanation. Quant questions also carry a topic (arithmetic, algebra, geometry, data) and an optional table.
+  - `validate_items` in `app/seed/items.py` enforces the format.
+- **Ratings.**
+  - Each user has a rating per question type (`user_skills`: `verbal.tc`, `quant.qc`, …). Verbal ratings start from the placement level when there is one; Quant ratings start at 0.
+  - Questions are picked near the rating, unseen first, and nothing answered in the last 14 days is repeated.
+  - After each answer, an Elo update in the engine moves both the rating and the question's learned difficulty. The update allows for the chance of guessing right: 1/5 for five choices, 1/4 for comparisons, 1/15 for SE, and none for numeric entry.
+  - Answers that used the hint count half.
+- **Separate stats.** Practice answers go into `attempts`, tagged with their section, but don't count toward the dashboard's vocabulary numbers.
 
 ## Placement check
 

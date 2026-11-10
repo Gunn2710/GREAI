@@ -39,16 +39,24 @@ const SECTIONS: Section[] = [
         to: '/practice',
         action: 'Practice',
       },
-      { name: 'Reading Comprehension', blurb: 'Passages with questions on meaning, structure, and inference.' },
+      {
+        name: 'Reading Comprehension',
+        blurb: 'Passages with questions on meaning, structure, and inference.',
+        to: '/practice?section=verbal&kind=rc',
+        action: 'Practice',
+      },
     ],
   },
   {
     name: 'Quantitative Reasoning',
     scoring: 'Scored 130–170',
     areas: [
-      { name: 'Arithmetic & Algebra', blurb: 'Number properties, exponents, equations, and inequalities.' },
-      { name: 'Geometry', blurb: 'Lines, angles, triangles, circles, and coordinate geometry.' },
-      { name: 'Data Analysis', blurb: 'Statistics, probability, and reading tables and graphs.' },
+      {
+        name: 'Arithmetic, Algebra, Geometry & Data Analysis',
+        blurb: 'Quantitative Comparison, multiple-choice, and numeric-entry questions matched to your level.',
+        to: '/practice?section=quant',
+        action: 'Practice',
+      },
     ],
   },
   {

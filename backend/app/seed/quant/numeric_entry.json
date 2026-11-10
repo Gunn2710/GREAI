@@ -1,0 +1,30 @@
+{
+  "_format": "Original Quantitative numeric-entry items. `answer` is the exact value, written as an integer, a decimal, or a fraction like 1/9; any equivalent entry is accepted. `fraction`: true asks for the answer as a fraction. `unit` (optional) is shown after the answer box.",
+  "items": [
+    {"slug": "qne-01", "difficulty": "easy", "topic": "arithmetic",
+     "text": "A recipe uses 3 cups of flour for every 2 cups of sugar. How many cups of flour are needed for 7 cups of sugar?",
+     "answer": "10.5", "unit": "cups",
+     "clue": "Set up the proportion 3/2 = f/7.",
+     "explanation": "Flour and sugar are in the ratio 3 : 2, so f/7 = 3/2 and f = 21/2 = 10.5 cups."},
+    {"slug": "qne-02", "difficulty": "medium", "topic": "algebra",
+     "text": "If 2ˣ⁺¹ = 32, what is the value of x²?",
+     "answer": "16",
+     "clue": "Write 32 as a power of 2.",
+     "explanation": "32 = 2⁵, so x + 1 = 5 and x = 4. The question asks for x², which is 16. Answering 4 (the value of x) is the most common mistake."},
+    {"slug": "qne-03", "difficulty": "medium", "topic": "data",
+     "text": "The average (arithmetic mean) of six numbers is 8. When a seventh number is added, the average of all seven numbers is 9. What is the seventh number?",
+     "answer": "15",
+     "clue": "Find the sum before and after the new number is added.",
+     "explanation": "The six numbers add up to 6 × 8 = 48. The seven numbers add up to 7 × 9 = 63. The new number is the difference: 63 − 48 = 15."},
+    {"slug": "qne-04", "difficulty": "medium", "topic": "data", "fraction": true,
+     "text": "Two fair six-sided dice are rolled. What is the probability that the numbers rolled add up to 5?",
+     "answer": "1/9",
+     "clue": "There are 6 × 6 = 36 equally likely outcomes. List the ones that add up to 5.",
+     "explanation": "Of the 36 equally likely outcomes, four add up to 5: (1, 4), (2, 3), (3, 2), and (4, 1). The probability is 4/36 = 1/9. Any equivalent fraction, such as 4/36, is accepted."},
+    {"slug": "qne-05", "difficulty": "hard", "topic": "geometry",
+     "text": "A rectangle's length is 3 more than its width, and its diagonal is 15. What is the area of the rectangle?",
+     "answer": "108",
+     "clue": "The diagonal makes a right triangle with the length and width: w² + (w + 3)² = 15².",
+     "explanation": "By the Pythagorean theorem, w² + (w + 3)² = 225, so 2w² + 6w − 216 = 0, or w² + 3w − 108 = 0. This factors as (w + 12)(w − 9) = 0, and a width must be positive, so w = 9 and the length is 12 (a 9-12-15 right triangle). The area is 9 × 12 = 108."}
+  ]
+}

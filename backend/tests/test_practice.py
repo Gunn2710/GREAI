@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from app.items.base import get_item_type
 from app.models import Attempt, IssuedItem, Item, UserParams, UserSkill
-from app.seed.items import load_items, sync_items, validate_items
+from app.seed.items import load_items, parse_number, sync_items, validate_items
 
 
 def headers(user: str) -> dict:
@@ -12,10 +12,17 @@ def headers(user: str) -> dict:
 
 
 def right_answer(issued: IssuedItem) -> dict:
+    if issued.item_type == "qne":
+        return {"value": issued.answer["value"]}
     return {"selected": issued.answer["indices"]}
 
 
 def wrong_answer(issued: IssuedItem) -> dict:
+    if issued.item_type == "qne":
+        return {"value": str(parse_number(issued.answer["value"]) + 1)}
+    if issued.item_type in ("rc", "qc", "qmc"):
+        n = len(issued.payload["options"])
+        return {"selected": [next(i for i in range(n) if [i] != issued.answer["indices"])]}
     if issued.item_type == "se":
         a, b = issued.answer["indices"]
         other = next(i for i in range(6) if i not in (a, b))
@@ -36,9 +43,21 @@ def test_shuffled_answers_match_authored_answers(client, db):
     for item in db.scalars(select(Item)):
         for _ in range(5):
             built = get_item_type(item.item_type).build(db, "u", item)
+            c = item.content
             if item.item_type == "tc":
                 picked = [built.payload["blanks"][b][i] for b, i in enumerate(built.answer["indices"])]
-                assert picked == [opts[0] for opts in item.content["blanks"]]
+                assert picked == [opts[0] for opts in c["blanks"]]
+            elif item.item_type == "rc":
+                picked = {built.payload["options"][i] for i in built.answer["indices"]}
+                assert picked == set(c["options"][: 1 if c["select"] == "one" else c["correct"]])
+                assert built.payload["passage"] == c["passage"]
+            elif item.item_type == "qc":
+                assert built.answer["indices"] == ["ABCD".index(c["answer"])]
+            elif item.item_type == "qmc":
+                assert built.payload["options"] == c["options"]  # quant options keep their order
+                assert built.answer["indices"] == sorted(c["answer"])
+            elif item.item_type == "qne":
+                assert built.answer["value"] == c["answer"] and "answer" not in built.payload
             else:
                 picked = {built.payload["options"][i] for i in built.answer["indices"]}
                 assert picked == set(item.content["options"][:2])
@@ -144,4 +163,104 @@ def test_hint_and_errors(client, db):
     assert client.post(f"/api/practice/items/{item['id']}/answer", json=body, headers=headers("intruder")).status_code == 404
     assert client.post(f"/api/practice/items/{item['id']}/answer", json=body, headers=h).status_code == 200
     assert client.post(f"/api/practice/items/{item['id']}/answer", json=body, headers=h).status_code == 409
-    assert client.get("/api/practice/next?kind=quant", headers=h).status_code == 422
+    assert client.get("/api/practice/next?kind=writing", headers=h).status_code == 422
+
+
+def test_new_sections_are_synced(client, db):
+    kinds = {i.item_type: i.section for i in db.scalars(select(Item))}
+    assert kinds == {"tc": "verbal", "se": "verbal", "rc": "verbal",
+                     "qc": "quant", "qmc": "quant", "qne": "quant"}
+    rc = db.scalar(select(Item).where(Item.slug == "rc-p01-q2"))
+    assert rc.content["passage_slug"] == "rc-p01" and rc.content["order"] == 2 and rc.content["of"] == 5
+
+
+def test_every_new_kind_grades_right_and_wrong(client, db):
+    for kind in ("rc", "qc", "qmc", "qne"):
+        ratings, _ = answer_n(client, db, f"pr-{kind}", kind, 3, correct=True)
+        assert ratings == sorted(ratings)
+        answer_n(client, db, f"pr-{kind}-bad", kind, 2, correct=False)
+    summary = client.get("/api/practice/summary", headers=headers("pr-qc")).json()
+    assert summary["qc"]["attempts"] == 3 and summary["qc"]["section"] == "quant"
+    attempt = db.scalar(select(Attempt).where(Attempt.user_id == "pr-qc"))
+    assert attempt.section == "quant"
+
+
+def test_mixed_quant_serves_only_quant(client, db):
+    h = headers("pr-quant-mix")
+    for _ in range(8):
+        item = client.get("/api/practice/next?kind=quant", headers=h).json()["item"]
+        assert item["item_type"] in ("qc", "qmc", "qne")
+        issued = db.get(IssuedItem, item["id"])
+        assert issued.section == "quant"
+
+
+def test_reading_passages_are_served_in_order(client, db):
+    h = headers("pr-reader")
+    served = []
+    for _ in range(12):
+        item = client.get("/api/practice/next?kind=rc", headers=h).json()["item"]
+        issued = db.get(IssuedItem, item["id"])
+        served.append((item["payload"]["passage"], item["payload"]["order"], item["payload"]["of"]))
+        client.post(f"/api/practice/items/{item['id']}/answer",
+                    json={"response": right_answer(issued), "response_ms": 1000}, headers=h)
+        db.expire_all()
+    # Each passage appears as one unbroken run of questions 1..n.
+    runs, i = [], 0
+    while i < len(served):
+        passage, _, n = served[i]
+        assert [o for _, o, _ in served[i:i + n]] == list(range(1, n + 1))
+        assert {p for p, _, _ in served[i:i + n]} == {passage}
+        runs.append(passage)
+        i += n
+    assert len(runs) == len(set(runs)) == 3
+
+
+def test_numeric_entry_accepts_equivalent_values(client, db):
+    qne = get_item_type("qne")
+    for slug, good, bad in [("qne-04", ["1/9", "4/36", " 2/18 "], ["0.111", "1/8", "", "abc", "1/0"]),
+                            ("qne-01", ["10.5", "21/2", "10.50"], ["10", "105"]),
+                            ("qne-05", ["108", "108.0", "1,080/10"], ["-108"])]:
+        item = db.scalar(select(Item).where(Item.slug == slug))
+        built = qne.build(db, "u", item)
+        issued = IssuedItem(id=f"ne-{slug}", user_id="u", section="quant", item_type="qne",
+                            bank_item_id=item.id, payload=built.payload, answer=built.answer)
+        for v in good:
+            assert asyncio.run(qne.grade(db, issued, {"value": v})).correct, (slug, v)
+        for v in bad:
+            assert not asyncio.run(qne.grade(db, issued, {"value": v})).correct, (slug, v)
+    assert asyncio.run(qne.grade(db, issued, {})).feedback["correct_answer"] == "108"
+
+
+def test_multi_answer_needs_every_right_choice(client, db):
+    qmc = get_item_type("qmc")
+    item = db.scalar(select(Item).where(Item.slug == "qmc-06"))
+    built = qmc.build(db, "u", item)
+    issued = IssuedItem(id="mc6", user_id="u", section="quant", item_type="qmc",
+                        bank_item_id=item.id, payload=built.payload, answer=built.answer)
+    assert asyncio.run(qmc.grade(db, issued, {"selected": [3, 0, 1]})).correct
+    assert not asyncio.run(qmc.grade(db, issued, {"selected": [0, 1]})).correct
+    assert not asyncio.run(qmc.grade(db, issued, {"selected": [0, 1, 2, 3]})).correct
+
+
+def test_quant_rating_ignores_vocab_level(client, db):
+    db.add(UserParams(user_id="pr-placed-q", speed_baselines={}, vocab_level=1.2))
+    db.commit()
+    client.get("/api/practice/next?kind=qc", headers=headers("pr-placed-q"))
+    assert db.get(UserSkill, ("pr-placed-q", "quant.qc")).rating == 0.0
+
+
+def test_validation_catches_bad_new_items():
+    good = load_items()
+    bad = {
+        "rc": [{**good["rc"][0], "slug": "x1", "options": good["rc"][0]["options"][:4]},
+               {**good["rc"][3], "slug": "x2", "correct": 0}],
+        "qc": [{**good["qc"][0], "slug": "x3", "answer": "E"}],
+        "qmc": [{**good["qmc"][0], "slug": "x4", "answer": [7]},
+                {**good["qmc"][3], "slug": "x5", "table": {"columns": ["a"], "rows": [["1", "2"]]}}],
+        "qne": [{**good["qne"][0], "slug": "x6", "answer": "ten"},
+                {**good["qne"][3], "slug": "x7", "answer": "0.25"},
+                {**good["qne"][1], "slug": "x8", "topic": "calculus"}],
+    }
+    problems = " | ".join(validate_items(bad))
+    for slug in ("x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8"):
+        assert f"{slug}:" in problems, slug
