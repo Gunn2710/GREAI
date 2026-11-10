@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { FrequencyBadge } from './Comfort'
 import { Pronunciation, SpeakButton } from './Pronounce'
-import { useConfig } from '../lib/config'
 import type { WordDetail } from '../lib/types'
 
 /** The word in large type with its speaker button and part of speech. */
@@ -74,7 +73,6 @@ export function Relations({ word }: { word: Pick<WordDetail, 'synonyms' | 'anton
 }
 
 export function WordCard({ word, linkToDetail = false }: { word: WordDetail; linkToDetail?: boolean }) {
-  const { ai_enabled } = useConfig()
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -92,7 +90,7 @@ export function WordCard({ word, linkToDetail = false }: { word: WordDetail; lin
         {linkToDetail && (
           <Button variant="ghost" size="sm" asChild>
             <Link to={`/words/${word.id}`}>
-              {ai_enabled ? 'Ask the tutor' : 'Word details'}
+              Word details
               <ArrowRight />
             </Link>
           </Button>

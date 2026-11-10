@@ -9,8 +9,7 @@ from app.auth import current_user_id
 from app.config import get_settings
 from app.db import get_db
 from app.models import Word
-from app.services import placement, practice, sets, stats, study
-from app.services import study_chat as study_chat_service
+from app.services import coach, placement, practice, sets, stats, study
 from app.services.ai import claude
 
 router = APIRouter(prefix="/api")
@@ -179,7 +178,20 @@ def _word_or_404(db: Session, word_id: int) -> Word:
 def word(word_id: int, user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
     w = _word_or_404(db, word_id)
     entry = next((x for x in stats.word_list(db, user_id, w.lemma) if x["id"] == w.id), None)
-    return {"word": study.word_detail(w), "card": entry["card"] if entry else None}
+    return {"word": study.word_detail(w), "card": entry["card"] if entry else None,
+            "my_sentence": study.my_sentence(db, user_id, w.id)}
+
+
+class SentenceIn(BaseModel):
+    sentence: str = Field(max_length=study.MAX_SENTENCE)
+
+
+@router.put("/words/{word_id}/sentence")
+def save_sentence(word_id: int, body: SentenceIn, user_id: str = Depends(current_user_id),
+                  db: Session = Depends(get_db)):
+    """Your own sentence with the word, to help you remember it. Empty removes it."""
+    w = _word_or_404(db, word_id)
+    return {"my_sentence": study.save_sentence(db, user_id, w.id, body.sentence)}
 
 
 # ---- AI -----------------------------------------------------------------------
@@ -189,26 +201,22 @@ class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
 
 
-class TutorIn(BaseModel):
+class CoachIn(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=40)
+    # What's on screen: the Vocab or Practice question being worked on, or the word page being read.
+    study_item_id: str | None = Field(default=None, max_length=36)
+    practice_item_id: str | None = Field(default=None, max_length=36)
+    word_id: int | None = None
 
 
-@router.post("/study/items/{item_id}/chat")
-async def study_chat(item_id: str, body: TutorIn, user_id: str = Depends(current_user_id),
-                     db: Session = Depends(get_db)):
-    """Ask the tutor about the question you're on (before or after answering)."""
+@router.post("/coach/chat")
+async def coach_chat(body: CoachIn, user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
+    """The study coach (chat bubble): progress, planning, GRE and vocabulary help."""
     if body.messages[-1].role != "user":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Last message must be from the user")
-    return await study_chat_service.chat(db, user_id, item_id, [m.model_dump() for m in body.messages])
-
-
-@router.post("/words/{word_id}/tutor")
-async def tutor(word_id: int, body: TutorIn, user_id: str = Depends(current_user_id),
-                db: Session = Depends(get_db)):
-    if body.messages[-1].role != "user":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Last message must be from the user")
-    reply = await claude.tutor(_word_or_404(db, word_id), [m.model_dump() for m in body.messages])
-    return {"reply": reply}
+    return await coach.chat(db, user_id, [m.model_dump() for m in body.messages],
+                            study_item_id=body.study_item_id, practice_item_id=body.practice_item_id,
+                            word_id=body.word_id)
 
 
 @router.post("/words/{word_id}/mnemonic")

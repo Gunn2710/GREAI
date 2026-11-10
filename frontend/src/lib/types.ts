@@ -80,6 +80,8 @@ export interface StudyItem {
     sentence?: string
     options?: string[]
     back?: WordDetail
+    /** Your own sentence with the word (flashcards: shown on the back). */
+    my_sentence?: string | null
   }
 }
 
@@ -123,6 +125,7 @@ export interface AnswerResult {
   }
   card: CardSummary
   word: WordDetail
+  my_sentence?: string | null
 }
 
 export interface Stats {
@@ -154,6 +157,18 @@ export interface WordListEntry {
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+}
+
+/** Plan changes the coach suggested; nothing is saved until the student clicks Save. */
+export interface PlanProposal {
+  changes: Partial<Profile>
+  current: Profile
+}
+
+export interface CoachReply {
+  reply: string
+  counted_as_hint: boolean
+  proposal: PlanProposal | null
 }
 
 export interface PlacementItem {

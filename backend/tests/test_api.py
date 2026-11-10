@@ -206,12 +206,12 @@ def test_word_endpoints(client):
     assert detail["word"]["synonyms"]
     assert detail["word"]["pronunciation"] == "luh-KAH-nik"
     assert detail["word"]["phrases"] == ["laconic reply", "laconic style", "laconic wit"]
-    tutor = client.post(
-        f"/api/words/{words[0]['id']}/tutor",
-        json={"messages": [{"role": "user", "content": "hi"}]},
+    coach = client.post(
+        "/api/coach/chat",
+        json={"messages": [{"role": "user", "content": "hi"}], "word_id": words[0]["id"]},
         headers=headers("alice"),
     )
-    assert tutor.status_code == 503  # AI disabled in tests
+    assert coach.status_code == 503  # AI disabled in tests
 
 
 def test_bank_is_valid():
@@ -423,7 +423,11 @@ def _mcq_item(client, h):
     return res["item"]
 
 
-def test_study_chat_coaches_without_answering_first(client, db, monkeypatch):
+def _coach(client, h, text, **page):
+    return client.post("/api/coach/chat", headers=h, json={"messages": [{"role": "user", "content": text}], **page})
+
+
+def test_coach_coaches_without_answering_first(client, db, monkeypatch):
     h = headers("chatty")
     item = _mcq_item(client, h)
     word = db.get(Word, db.get(IssuedItem, item["id"]).word_id)
@@ -431,9 +435,8 @@ def test_study_chat_coaches_without_answering_first(client, db, monkeypatch):
     fake = FakeClaude(_tool("look_up_word", word=other.lemma.upper()), _text("Think about the root."))
     monkeypatch.setattr(ai.claude, "_create", fake)
 
-    res = client.post(f"/api/study/items/{item['id']}/chat", headers=h,
-                      json={"messages": [{"role": "user", "content": "What's the answer?"}]}).json()
-    assert res == {"reply": "Think about the root.", "counted_as_hint": True}
+    res = _coach(client, h, "What's the answer?", study_item_id=item["id"]).json()
+    assert res == {"reply": "Think about the root.", "counted_as_hint": True, "proposal": None}
     system = fake.calls[0]["system"]
     assert "HAS NOT ANSWERED YET" in system and "Correct answer:" in system and word.lemma in system
     # The tool ran against the word bank and its result went back to Claude.
@@ -443,40 +446,127 @@ def test_study_chat_coaches_without_answering_first(client, db, monkeypatch):
     assert db.get(IssuedItem, item["id"]).hint_used
 
 
-def test_study_chat_explains_freely_after_answering(client, db, monkeypatch):
+def test_coach_explains_freely_after_answering(client, db, monkeypatch):
     h = headers("after")
     item = _mcq_item(client, h)
     client.post(f"/api/study/items/{item['id']}/answer", headers=h,
                 json={"response": {"selected": 0}, "response_ms": 4000})
-    fake = FakeClaude(_tool("student_history"), _text("Here's why."))
+    lemma = db.get(Word, db.get(IssuedItem, item["id"]).word_id).lemma
+    fake = FakeClaude(_tool("word_history", word=lemma), _text("Here's why."))
     monkeypatch.setattr(ai.claude, "_create", fake)
 
-    res = client.post(f"/api/study/items/{item['id']}/chat", headers=h,
-                      json={"messages": [{"role": "user", "content": "Why?"}]}).json()
-    assert res == {"reply": "Here's why.", "counted_as_hint": False}
+    res = _coach(client, h, "Why?", study_item_id=item["id"]).json()
+    assert res == {"reply": "Here's why.", "counted_as_hint": False, "proposal": None}
     system = fake.calls[0]["system"]
     assert "has answered" in system and "Chose A" in system
     history = fake.calls[1]["messages"][-1]["content"][0]["content"]
     assert '"recent_attempts": [{' in history
 
 
-def test_study_chat_is_private(client, monkeypatch):
+def test_coach_only_sees_your_own_questions(client, monkeypatch):
     item = _mcq_item(client, headers("owner"))
     monkeypatch.setattr(ai.claude, "_create", FakeClaude(_text("hi")))
-    res = client.post(f"/api/study/items/{item['id']}/chat", headers=headers("someone-else"),
-                      json={"messages": [{"role": "user", "content": "hi"}]})
+    res = _coach(client, headers("someone-else"), "hi", study_item_id=item["id"])
     assert res.status_code == 404
 
 
-def test_both_tutors_carry_the_topic_rules(client, db, monkeypatch):
-    h = headers("scoped")
+def test_coach_knows_your_progress_and_stays_on_topic(client, db, monkeypatch):
+    h = headers("coached")
     item = _mcq_item(client, h)
-    fake = FakeClaude(_text("ok"), _text("ok"))
+    client.post(f"/api/study/items/{item['id']}/answer", headers=h,
+                json={"response": {"selected": 0}, "response_ms": 4000})
+    client.put("/api/me/profile", headers=h, json={"test_date": (utcnow().date() + timedelta(days=50)).isoformat(),
+                                                    "target_verbal": 160, "daily_new_words": 12})
+    fake = FakeClaude(_tool("vocab_sets"), _text("You're on set 1."))
     monkeypatch.setattr(ai.claude, "_create", fake)
-    monkeypatch.setattr(ai.claude.settings, "ai_enabled", True)
-    msgs = {"messages": [{"role": "user", "content": "what is 5 times 5"}]}
-    client.post(f"/api/study/items/{item['id']}/chat", headers=h, json=msgs)
-    word_id = db.get(IssuedItem, item["id"]).word_id
-    client.post(f"/api/words/{word_id}/tutor", headers=h, json=msgs)
-    assert len(fake.calls) == 2
-    assert all(ai.TUTOR_SCOPE in call["system"] for call in fake.calls)
+
+    res = _coach(client, h, "What is my current vocabulary progress?").json()
+    assert res == {"reply": "You're on set 1.", "counted_as_hint": False, "proposal": None}
+    system = fake.calls[0]["system"]
+    assert "STAY ON TOPIC" in system and "isn't looking at a particular question" in system
+    snap = system.split("<progress_snapshot>")[1].split("</progress_snapshot>")[0]
+    import json
+    snap = json.loads(snap)
+    assert snap["plan"]["days_until_test"] == 50 and snap["plan"]["target_verbal"] == 160
+    assert snap["vocab"]["words_started"] >= 1 and snap["vocab"]["new_words_per_day_to_finish_by_test"] > 0
+    assert {p["type"] for p in snap["practice"]} >= {"Text Completion", "Quantitative Comparison"}
+    sets = json.loads(fake.calls[1]["messages"][-1]["content"][0]["content"])
+    assert sets["current_set"] == 1 and sets["sets"][0]["started"] >= 1
+
+
+def test_coach_proposes_plan_changes_without_saving(client, db, monkeypatch):
+    h = headers("planner")
+    client.put("/api/me/profile", headers=h, json={"daily_new_words": 10})
+    later = (utcnow().date() + timedelta(days=60)).isoformat()
+    fake = FakeClaude(
+        _tool("propose_plan", target_verbal=200),  # out of range: refused, not shown
+        _tool("propose_plan", daily_new_words=20, test_date=later),
+        _text("Here's a plan."),
+    )
+    monkeypatch.setattr(ai.claude, "_create", fake)
+
+    res = _coach(client, h, "Help me set a target progress.").json()
+    assert res["proposal"] == {
+        "changes": {"daily_new_words": 20, "test_date": later},
+        "current": {"test_date": None, "target_verbal": None, "target_quant": None, "daily_new_words": 10},
+    }
+    assert "Not shown" in fake.calls[1]["messages"][-1]["content"][0]["content"]
+    assert client.get("/api/me/profile", headers=h).json()["daily_new_words"] == 10
+
+
+def test_coach_on_a_word_page(client, db, monkeypatch):
+    word = db.scalar(select(Word).limit(1))
+    fake = FakeClaude(_text("ok"))
+    monkeypatch.setattr(ai.claude, "_create", fake)
+    res = _coach(client, headers("reader"), "Give me a memory trick", word_id=word.id).json()
+    assert res["counted_as_hint"] is False
+    assert f"word page for “{word.lemma}”" in fake.calls[0]["system"]
+    assert _coach(client, headers("reader"), "hi", word_id=10**9).status_code == 404
+
+
+def test_coach_history_starts_with_the_student(client, monkeypatch):
+    fake = FakeClaude(_text("ok"))
+    monkeypatch.setattr(ai.claude, "_create", fake)
+    msgs = [{"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"} for i in range(23)]
+    client.post("/api/coach/chat", headers=headers("long"), json={"messages": msgs})
+    sent = fake.calls[0]["messages"]
+    assert sent[0]["role"] == "user" and sent[-1]["content"] == "m22" and len(sent) <= 20
+
+
+def test_your_sentence_is_saved_and_shown_after_the_answer(client, db):
+    h = headers("writer")
+    word = db.scalar(select(Word).limit(1))
+    assert client.get(f"/api/words/{word.id}", headers=h).json()["my_sentence"] is None
+
+    sentence = f"  My  {word.lemma} sentence,\nwith extra space. "
+    res = client.put(f"/api/words/{word.id}/sentence", headers=h, json={"sentence": sentence})
+    assert res.json() == {"my_sentence": f"My {word.lemma} sentence, with extra space."}
+    assert client.get(f"/api/words/{word.id}", headers=h).json()["my_sentence"].startswith("My ")
+    # It's yours: another student doesn't see it.
+    assert client.get(f"/api/words/{word.id}", headers=headers("reader2")).json()["my_sentence"] is None
+
+    # It comes back with the answer (and on the flashcard's back) for that word.
+    item = client.get("/api/study/next?format=mcq", headers=h).json()["item"]
+    issued_word = db.get(IssuedItem, item["id"]).word_id
+    client.put(f"/api/words/{issued_word}/sentence", headers=h, json={"sentence": "Mine."})
+    result = client.post(f"/api/study/items/{item['id']}/answer", headers=h,
+                         json={"response": {"selected": 0}, "response_ms": 3000}).json()
+    assert result["my_sentence"] == "Mine."
+
+    # Empty removes it; too long is refused; unknown words are 404.
+    cleared = client.put(f"/api/words/{word.id}/sentence", headers=h, json={"sentence": " "})
+    assert cleared.json() == {"my_sentence": None}
+    assert client.get(f"/api/words/{word.id}", headers=h).json()["my_sentence"] is None
+    assert client.put(f"/api/words/{word.id}/sentence", headers=h, json={"sentence": "x" * 501}).status_code == 422
+    assert client.put("/api/words/999999/sentence", headers=h, json={"sentence": "hi"}).status_code == 404
+
+
+def test_flashcard_back_carries_your_sentence(client, db):
+    h = headers("flash-writer")
+    first = client.get("/api/study/next?format=flashcard", headers=h).json()["item"]
+    word_id = db.get(IssuedItem, first["id"]).word_id
+    assert first["payload"]["my_sentence"] is None
+    client.put(f"/api/words/{word_id}/sentence", headers=h, json={"sentence": "A cue."})
+    again = client.get("/api/study/next?format=flashcard", headers=h).json()["item"]  # same unanswered card
+    assert db.get(IssuedItem, again["id"]).word_id == word_id
+    assert again["payload"]["my_sentence"] == "A cue."

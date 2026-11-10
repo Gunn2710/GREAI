@@ -1,24 +1,30 @@
-import { ArrowLeft, Sparkles } from 'lucide-react'
+import { ArrowLeft, MessageCircle, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ErrorAlert, LoadingCard } from '@/components/Status'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CardStats } from '../components/Comfort'
-import { TutorChat } from '../components/TutorChat'
 import { WordCard } from '../components/WordCard'
+import { YourSentence } from '../components/YourSentence'
 import { api, ApiError } from '../lib/api'
+import { useCoach, useCoachPage } from '../lib/coach'
 import { useConfig } from '../lib/config'
 import type { CardSummary, WordDetail } from '../lib/types'
 
 export default function WordPage() {
   const id = Number(useParams().id)
   const { ai_enabled } = useConfig()
-  const [data, setData] = useState<{ word: WordDetail; card: CardSummary | null } | null>(null)
+  const [data, setData] = useState<{ word: WordDetail; card: CardSummary | null; my_sentence: string | null } | null>(
+    null,
+  )
   const [mnemonic, setMnemonic] = useState<string | null>(null)
   const [mnemonicBusy, setMnemonicBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const coach = useCoach()
+  // The study coach (chat bubble) knows which word this page is about.
+  useCoachPage(data ? { kind: 'word', wordId: data.word.id, lemma: data.word.lemma } : null)
 
   useEffect(() => {
     setData(null)
@@ -55,24 +61,31 @@ export default function WordPage() {
         <Card>
           <CardContent className="flex flex-col gap-4">
             <WordCard word={word} />
-            {ai_enabled &&
-              (mnemonic ? (
-                <Alert>
-                  <Sparkles />
-                  <AlertDescription className="text-foreground">
-                    <p>
-                      <b className="font-semibold">Mnemonic:</b> {mnemonic}
-                    </p>
-                  </AlertDescription>
-                </Alert>
-              ) : (
-                <div>
+            <YourSentence key={word.id} wordId={word.id} lemma={word.lemma} initial={data.my_sentence} />
+            {ai_enabled && mnemonic && (
+              <Alert>
+                <Sparkles />
+                <AlertDescription className="text-foreground">
+                  <p>
+                    <b className="font-semibold">Mnemonic:</b> {mnemonic}
+                  </p>
+                </AlertDescription>
+              </Alert>
+            )}
+            {ai_enabled && (
+              <div className="flex flex-wrap gap-2">
+                {!mnemonic && (
                   <Button variant="outline" onClick={makeMnemonic} disabled={mnemonicBusy}>
                     <Sparkles />
                     {mnemonicBusy ? 'Thinking…' : 'Give me a mnemonic'}
                   </Button>
-                </div>
-              ))}
+                )}
+                <Button variant="outline" onClick={() => coach.setOpen(true)}>
+                  <MessageCircle />
+                  Ask the coach about “{word.lemma}”
+                </Button>
+              </div>
+            )}
             {error && <ErrorAlert>{error}</ErrorAlert>}
           </CardContent>
         </Card>
@@ -89,19 +102,9 @@ export default function WordPage() {
           </CardContent>
         </Card>
       </div>
-      {ai_enabled ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Tutor</CardTitle>
-            <CardDescription>Ask anything about “{word.lemma}”.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <TutorChat wordId={word.id} lemma={word.lemma} />
-          </CardContent>
-        </Card>
-      ) : (
+      {!ai_enabled && (
         <p className="px-1 text-xs text-muted-foreground">
-          The AI tutor is off. Set GRE_AI_ENABLED=true and add Claude credentials on the server.
+          The study coach is off. Set GRE_AI_ENABLED=true and add Claude credentials on the server.
         </p>
       )}
     </div>

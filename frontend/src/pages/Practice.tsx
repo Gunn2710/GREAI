@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { api, ApiError } from '../lib/api'
+import { useCoachPage } from '../lib/coach'
 import type {
   PracticeItem,
   PracticeKind,
@@ -72,6 +73,12 @@ export default function Practice() {
   const setKind = (k: PracticeKind) => setParams({ section, kind: k }, { replace: true })
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' })
   const [summary, setSummary] = useState<PracticeSummary | null>(null)
+  // The study coach (chat bubble) sees the question on screen.
+  useCoachPage(
+    phase.kind === 'question' || phase.kind === 'result'
+      ? { kind: 'practice', itemId: phase.item.id, answered: phase.kind === 'result' }
+      : null,
+  )
 
   const loadNext = useCallback(async (k: PracticeKind) => {
     setPhase({ kind: 'loading' })

@@ -13,9 +13,9 @@ import { cn } from '@/lib/utils'
 import { CardStats, DEPTH_LABEL, TIER_LABEL, formatDue } from '../components/Comfort'
 import { Question, type Submit } from '../components/Question'
 import { SetProgress } from '../components/Sets'
-import { StudyTutor } from '../components/StudyTutor'
 import { WordCard } from '../components/WordCard'
-import { useConfig } from '../lib/config'
+import { YourSentence } from '../components/YourSentence'
+import { useCoachPage } from '../lib/coach'
 import { api, ApiError } from '../lib/api'
 import type { AnswerResult, StudyFormat, StudyItem, WordSet } from '../lib/types'
 
@@ -25,7 +25,6 @@ const FORMATS: { format: StudyFormat; label: string }[] = [
   { format: 'mcq', label: 'Multiple choice' },
 ]
 const FORMAT_KEY = 'study-format'
-const TUTOR_KEY = 'study-tutor-open'
 
 /** The last format picked, remembered per browser (a convenience only). */
 function savedFormat(): StudyFormat {
@@ -62,20 +61,17 @@ export default function Study() {
   const [count, setCount] = useState(0)
   const [set, setSet] = useState<(WordSet & { total: number }) | null>(null)
   const [format, setFormat] = useState<StudyFormat>(savedFormat)
-  const { ai_enabled } = useConfig()
-  const [tutorOpen, setTutorOpen] = useState(() => {
-    try {
-      return localStorage.getItem(TUTOR_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
-  const toggleTutor = () => {
-    setTutorOpen((open) => {
-      savePref(TUTOR_KEY, open ? '0' : '1')
-      return !open
-    })
-  }
+  // The study coach (chat bubble) sees the question on screen.
+  useCoachPage(
+    phase.kind === 'question' || phase.kind === 'result'
+      ? {
+          kind: 'study',
+          itemId: phase.item.id,
+          answered: phase.kind === 'result',
+          flashcard: phase.item.item_type === 'flashcard',
+        }
+      : null,
+  )
 
   const loadNext = useCallback(async () => {
     setPhase({ kind: 'loading' })
@@ -232,16 +228,6 @@ export default function Study() {
       )}
 
       {phase.kind === 'result' && <Result {...phase} onNext={loadNext} />}
-
-      {ai_enabled && (phase.kind === 'question' || phase.kind === 'result') && (
-        <StudyTutor
-          key={phase.item.id}
-          item={phase.item}
-          answered={phase.kind === 'result'}
-          open={tutorOpen}
-          onToggle={toggleTutor}
-        />
-      )}
     </div>
   )
 }
@@ -325,6 +311,12 @@ function Result({
 
         <Separator />
         <WordCard word={result.word} linkToDetail />
+        <YourSentence
+          key={result.word.id}
+          wordId={result.word.id}
+          lemma={result.word.lemma}
+          initial={result.my_sentence ?? null}
+        />
 
         <div className="flex justify-end">
           <Button onClick={onNext} autoFocus>

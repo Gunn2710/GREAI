@@ -172,6 +172,17 @@ class Attempt(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
+class WordSentence(Base):
+    """A sentence the student wrote with a word to help them remember it (optional)."""
+
+    __tablename__ = "word_sentences"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), primary_key=True)
+    sentence: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class Confusion(Base):
     """Which wrong word a user picked when the answer was another word."""
 

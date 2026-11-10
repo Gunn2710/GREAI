@@ -2,6 +2,7 @@ import type {
   AnswerResult,
   AppConfig,
   ChatMessage,
+  CoachReply,
   Confidence,
   Hint,
   NextResponse,
@@ -117,9 +118,14 @@ export const api = {
   sets: () => request<SetsResponse>('/sets'),
   words: (search?: string) =>
     request<WordListEntry[]>(`/words${search ? `?search=${encodeURIComponent(search)}` : ''}`),
-  word: (id: number) => request<{ word: WordDetail; card: CardSummary | null }>(`/words/${id}`),
-  tutor: (id: number, messages: ChatMessage[]) => post<{ reply: string }>(`/words/${id}/tutor`, { messages }),
-  studyChat: (itemId: string, messages: ChatMessage[]) =>
-    post<{ reply: string; counted_as_hint: boolean }>(`/study/items/${itemId}/chat`, { messages }),
+  word: (id: number) =>
+    request<{ word: WordDetail; card: CardSummary | null; my_sentence: string | null }>(`/words/${id}`),
+  saveSentence: (id: number, sentence: string) =>
+    request<{ my_sentence: string | null }>(`/words/${id}/sentence`, {
+      method: 'PUT',
+      body: JSON.stringify({ sentence }),
+    }),
+  coach: (messages: ChatMessage[], page: { study_item_id?: string; practice_item_id?: string; word_id?: number }) =>
+    post<CoachReply>('/coach/chat', { messages, ...page }),
   mnemonic: (id: number) => post<{ mnemonic: string }>(`/words/${id}/mnemonic`),
 }

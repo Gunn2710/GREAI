@@ -264,3 +264,46 @@ def test_validation_catches_bad_new_items():
     problems = " | ".join(validate_items(bad))
     for slug in ("x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8"):
         assert f"{slug}:" in problems, slug
+
+
+def test_coach_sees_the_practice_question(client, db, monkeypatch):
+    from app.services import ai
+    from tests.test_api import FakeClaude, _text
+
+    h = headers("pr-coach")
+    for kind in ("tc", "rc", "qc", "qne"):
+        item = client.get(f"/api/practice/next?kind={kind}", headers=h).json()["item"]
+        issued = db.get(IssuedItem, item["id"])
+        fake = FakeClaude(_text("Think about it."), _text("Here's why."))
+        monkeypatch.setattr(ai.claude, "_create", fake)
+        ask = {"messages": [{"role": "user", "content": "Give me a hint"}], "practice_item_id": item["id"]}
+
+        res = client.post("/api/coach/chat", headers=h, json=ask).json()
+        assert res["counted_as_hint"] is True
+        before = fake.calls[0]["system"]
+        assert "on the Practice page" in before and "HAS NOT ANSWERED YET" in before
+        assert "Correct answer:" in before and issued.answer["explanation"] in before
+        if kind == "rc":
+            assert issued.payload["passage"][:40] in before
+        db.expire_all()
+        assert db.get(IssuedItem, item["id"]).hint_used  # a hinted answer moves the rating less
+
+        client.post(f"/api/practice/items/{item['id']}/answer", headers=h,
+                    json={"response": wrong_answer(issued), "response_ms": 5000})
+        res = client.post("/api/coach/chat", headers=h, json=ask).json()
+        assert res["counted_as_hint"] is False
+        after = fake.calls[1]["system"]
+        assert "has answered" in after and "(incorrect)" in after
+
+
+def test_coach_only_opens_your_own_practice_questions(client, monkeypatch):
+    from app.services import ai
+    from tests.test_api import FakeClaude, _text
+
+    monkeypatch.setattr(ai.claude, "_create", FakeClaude(_text("hi")))
+    item = client.get("/api/practice/next?kind=qc", headers=headers("pr-owner")).json()["item"]
+    ask = {"messages": [{"role": "user", "content": "hi"}], "practice_item_id": item["id"]}
+    assert client.post("/api/coach/chat", headers=headers("pr-other"), json=ask).status_code == 404
+    vocab = client.get("/api/study/next?format=mcq", headers=headers("pr-owner")).json()["item"]
+    ask["practice_item_id"] = vocab["id"]  # a Vocab question isn't a Practice question
+    assert client.post("/api/coach/chat", headers=headers("pr-owner"), json=ask).status_code == 404
