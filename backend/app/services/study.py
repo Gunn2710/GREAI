@@ -12,7 +12,7 @@ from app import vocab_engine as ve
 from app.config import get_settings
 from app.items import vocab  # noqa: F401  (registers vocab item types)
 from app.items.base import get_item_type
-from app.models import Attempt, Card, Confusion, IssuedItem, Profile, UserParams, Word, utcnow
+from app.models import Attempt, Card, Confusion, IssuedItem, Profile, UserParams, Word, WordSentence, utcnow
 from app.services.ai import claude
 from app.services.difficulty import FAST_TRACK_P, known_card, word_difficulty
 from app.services.sets import current_set
@@ -58,6 +58,30 @@ def word_detail(word: Word) -> dict:
         "tier": word.tier,
         "set": word.set_no,
     }
+
+
+MAX_SENTENCE = 500
+
+
+def my_sentence(db: Session, user_id: str, word_id: int) -> str | None:
+    """The student's own sentence with this word, if they wrote one."""
+    row = db.get(WordSentence, (user_id, word_id))
+    return row.sentence if row else None
+
+
+def save_sentence(db: Session, user_id: str, word_id: int, sentence: str) -> str | None:
+    """Save the student's sentence; an empty one removes it."""
+    sentence = " ".join(sentence.split())[:MAX_SENTENCE]
+    row = db.get(WordSentence, (user_id, word_id))
+    if not sentence:
+        if row:
+            db.delete(row)
+    elif row:
+        row.sentence = sentence
+    else:
+        db.add(WordSentence(user_id=user_id, word_id=word_id, sentence=sentence))
+    db.commit()
+    return sentence or None
 
 
 def get_profile(db: Session, user_id: str) -> Profile:
@@ -206,6 +230,7 @@ def next_item(db: Session, user_id: str, fmt: str = "mixed") -> dict:
             break
     if type_name == "flashcard":
         built.payload["back"] = word_detail(word)
+        built.payload["my_sentence"] = my_sentence(db, user_id, word.id)
 
     item = IssuedItem(
         id=str(uuid.uuid4()),
@@ -318,4 +343,5 @@ async def answer(
         "feedback": grade.feedback,
         "card": eb.card_summary(card, now),
         "word": word_detail(db.get(Word, item.word_id)),
+        "my_sentence": my_sentence(db, user_id, item.word_id),
     }

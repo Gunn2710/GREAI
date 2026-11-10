@@ -143,7 +143,7 @@ The placement check (`/placement`) has 20 adaptive questions. Each one asks you 
 - **Frequency tiers.** Each word has a tier: 1 = high frequency (160 words), 2 = medium (156), 3 = advanced (24). New words are introduced high-frequency first.
 - **Where the tiers come from.** Words tagged `"freq_source": "magoosh_top20"` are Magoosh's public "Top 20 most tested GRE words"; all 20 are in the bank. Magoosh's Common/Basic/Advanced flashcard decks don't publish their word lists. The other tiers are editorial judgments to review.
 - **Clusters and families.** A cluster groups near-synonyms. A family groups clusters that are easy to confuse, such as *soothe* and *ease*. Quiz distractors never come from the target's own family, and no two options are listed synonyms of each other. As a result, every synonym-pair question has exactly one right pair.
-- **Common phrases.** Each word lists 2–4 phrases showing how it's most often used in real writing, such as *widely lauded* or *a false dichotomy*, never pairings that are merely grammatical. They appear on the word page and the back of the flashcard, and the AI tutor sees them too. Every phrase must contain the word itself or a regular inflection of it (*lauded*, *extolled*).
+- **Common phrases.** Each word lists 2–4 phrases showing how it's most often used in real writing, such as *widely lauded* or *a false dichotomy*, never pairings that are merely grammatical. They appear on the word page and the back of the flashcard, and the study coach sees them too. Every phrase must contain the word itself or a regular inflection of it (*lauded*, *extolled*).
 - **Checks.** `validate_bank` in `app/seed/seed.py` enforces these rules. One example: a synonym that is itself a bank word must belong to the same family.
 
 ## Adding a section later
@@ -155,10 +155,10 @@ profile (`target_quant` is already there) are section-agnostic.
 
 ## AI (Claude)
 
-`backend/app/services/ai.py` contains three features:
-- the word tutor
-- usage grading with structured JSON output
-- mnemonics
+Claude powers three features:
+- the study coach (`backend/app/services/coach.py`): the chat bubble on every page. It sees a snapshot of the student's progress (plan, vocab sets and comfort, practice ratings) and can look further with tools: set-by-set progress, weak words and confused pairs, recent activity, word entries and a student's history with a word. It also knows what's on screen. On a Vocab or Practice question it won't give the answer away before you answer, and asking counts as a hint. Plan changes (test date, targets, new words per day) are only proposed: the student saves them with a button.
+- usage grading with structured JSON output (`ai.py`)
+- mnemonics (`ai.py`)
 
 All three default to `claude-opus-5-5` (`GRE_CLAUDE_MODEL`), with server-side refusal fallbacks turned on.
 Prompts always include the word's verified entry.

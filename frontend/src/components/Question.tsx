@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { api } from '../lib/api'
 import { OptionButton, OptionKey } from './Option'
+import { SentenceNote } from './YourSentence'
 import { Pronunciation, SpeakButton } from './Pronounce'
 import { Phrases, Relations, WordTitle } from './WordCard'
 import type { Confidence, StudyItem, WordDetail } from '../lib/types'
@@ -115,6 +116,7 @@ function Flashcard({ item, busy, onSubmit }: Props) {
       <Phrases phrases={back.phrases ?? []} />
       {back.examples[0] && <p className="text-sm text-muted-foreground">“{back.examples[0]}”</p>}
       <Relations word={back} />
+      {item.payload.my_sentence && <SentenceNote sentence={item.payload.my_sentence} />}
       <div className="mt-2 flex flex-col gap-2 border-t pt-4">
         <span className="text-xs text-muted-foreground">How well did you know it?</span>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

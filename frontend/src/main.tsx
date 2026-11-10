@@ -4,13 +4,16 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { AuthGate, CLERK_PUBLISHABLE_KEY } from './lib/auth'
+import { CoachProvider } from './lib/coach'
 import { ConfigProvider } from './lib/config'
 import './index.css'
 
 const app = (
   <BrowserRouter>
     <ConfigProvider>
-      <App />
+      <CoachProvider>
+        <App />
+      </CoachProvider>
     </ConfigProvider>
   </BrowserRouter>
 )
