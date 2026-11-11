@@ -14,9 +14,26 @@ updates:
     directory: /frontend
     schedule:
       interval: weekly
+    # A dependency joins the first group that matches it.
     groups:
+      # Vite and its plugins only work at matching majors (plugin-react 6 needs
+      # Vite 8), so they're upgraded together in one PR.
+      vite:
+        patterns: [vite, "@vitejs/*", "@tailwindcss/vite"]
+      # ESLint and its config/TypeScript packages move together for the same reason.
+      eslint:
+        patterns: [eslint, "@eslint/*", typescript-eslint]
       npm:
         update-types: [minor, patch]
+    ignore:
+      # typescript-eslint 8 supports ESLint up to 9 and TypeScript below 6.1, so
+      # these majors can't install yet. Remove when typescript-eslint supports them.
+      - dependency-name: eslint
+        update-types: [version-update:semver-major]
+      - dependency-name: "@eslint/*"
+        update-types: [version-update:semver-major]
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
