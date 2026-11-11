@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+  # Weekly: a full-history secret scan and a fresh vulnerability check, since
+  # new advisories appear even when the code doesn't change.
+  schedule:
+    - cron: "0 13 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks scans the commits, not just the latest files
+      - name: Secret hygiene (env files, templates, public VITE_ variables)
+        run: scripts/check-secrets.sh
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_ENABLE_COMMENTS: false
+
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      # Throwaway database for the test suite (see backend/tests/conftest.py).
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gre
+          POSTGRES_PASSWORD: gre
+          POSTGRES_DB: gre_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gre -d gre_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      GRE_TEST_DATABASE_URL: postgresql://gre:gre@localhost:5432/gre_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: backend/.python-version
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements*.txt
+            backend/constraints.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt -c constraints.txt
+      - name: Run tests
+        run: python -m pytest -q
+
+  frontend:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type-check and build
+        run: npm run build
+
+  audit:
+    name: Dependency vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: backend/.python-version
+      - name: Python packages (pinned in constraints.txt)
+        run: |
+          pip install pip-audit
+          pip-audit --requirement backend/constraints.txt --no-deps --disable-pip --progress-spinner off
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: npm packages shipped to users (high and critical)
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high

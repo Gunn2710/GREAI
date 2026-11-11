@@ -165,6 +165,19 @@ Prompts always include the word's verified entry.
 `backend/scripts/generate_words.py` grows the word bank: one Claude call writes each entry and a second, independent call reviews it.
 Set `GRE_AI_ENABLED=false` to run without credentials. Usage questions are then never served.
 
+## CI (GitHub Actions)
+
+`.github/workflows/ci.yml` runs on pushes to `main` and `dev`, on pull requests, weekly, and on demand (Actions → CI → Run workflow). It needs no secrets: the tests use a throwaway Postgres container and run with AI turned off. The four jobs:
+
+- **Secret scan.** `scripts/check-secrets.sh` checks that no `.env` file is committed and that `.gitignore` still ignores them. It also checks that `.env.example` holds only empty values and `<placeholders>`, and that no secret-sounding `VITE_` variable exists, since those are built into the public JavaScript. Then [gitleaks](https://github.com/gitleaks/gitleaks) scans the commits for keys and passwords, using its default rules plus Clerk secret keys and database URLs with a password (`.gitleaks.toml`). The weekly run scans the whole history.
+- **Backend tests.** `pytest` on Python 3.12 against Postgres 16.
+- **Frontend lint and build.** `npm ci`, ESLint, then `tsc` and `vite build`.
+- **Dependency vulnerabilities.** `pip-audit` on the pinned versions in `backend/constraints.txt`, and `npm audit` for high or critical issues in packages that ship to users.
+
+Run the secret check locally with `scripts/check-secrets.sh`. Dependabot (`.github/dependabot.yml`) opens weekly update PRs for pip, npm and the workflow's actions.
+
+To make CI required before merging: GitHub → Settings → Branches → add a rule for `main` → "Require status checks to pass", and pick the four jobs.
+
 ## Deploy on Vercel
 
 `vercel.json` deploys both halves as one Vercel project: `/api/*` goes to the FastAPI backend and everything else to the Vite frontend. Set these in the Vercel project's environment variables:
