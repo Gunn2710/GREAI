@@ -27,7 +27,12 @@ def correct_response(item: IssuedItem) -> dict:
     return {"sentence": "placeholder"}
 
 
-def test_every_word_builds_every_mode(client, db):
+def test_every_word_builds_every_mode(client, db, monkeypatch):
+    from app.items import vocab
+
+    # Every build reloads the whole word pool; load it once for the 3,000+ builds here.
+    pool = vocab._pool(db)
+    monkeypatch.setattr(vocab, "_pool", lambda _db: pool)
     words = list(db.scalars(select(Word)))
     assert len(words) == len(BANK_WORDS)
     by_lemma = {w.lemma: w for w in words}
