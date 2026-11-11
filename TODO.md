@@ -19,3 +19,4 @@
 - [ ] Add simple github action CI to check for secret safety
 - [ ] Per user Chat history after refresh
 - [ ] Prompt Caching and Model Switching
+- [ ] Simplify backend tests
