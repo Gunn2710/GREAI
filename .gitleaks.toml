@@ -1,0 +1,21 @@
+# gitleaks: scans commits for secrets (run by .github/workflows/ci.yml).
+# The default rules already cover Anthropic, GitHub, AWS, private keys and more;
+# these add the secrets this app uses that the defaults miss.
+title = "GRE Prep"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "clerk-secret-key"
+description = "Clerk secret key (CLERK_SECRET_KEY)"
+regex = '''sk_(?:live|test)_[A-Za-z0-9]{20,}'''
+keywords = ["sk_live_", "sk_test_"]
+
+[[rules]]
+id = "postgres-url-password"
+description = "PostgreSQL connection string with a password in it (GRE_DATABASE_URL)"
+# Placeholders such as <db-password> and short local passwords (gre:gre) don't match.
+regex = '''postgres(?:ql)?(?:\+psycopg)?://[^:/\s'"@]+:([^@\s'"<>{}$]{8,})@'''
+secretGroup = 1
+keywords = ["postgres://", "postgresql://", "postgresql+psycopg://"]
