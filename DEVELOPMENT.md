@@ -113,8 +113,6 @@ On Vercel the backend refuses to start unless Clerk sign-in and the approved-ema
 - **Frontend lint and build.** `npm ci`, ESLint, then `tsc` and `vite build`.
 - **Dependency vulnerabilities.** `pip-audit` on the pinned versions in `backend/constraints.txt`, and `npm audit` for high or critical issues in packages that ship to users.
 
-Dependabot (`.github/dependabot.yml`) opens weekly update PRs for pip, npm and the workflow's actions.
-
 To make CI required before merging: GitHub → Settings → Branches → add a rule for `main` → "Require status checks to pass", and pick the four jobs.
 
 ## How it works
