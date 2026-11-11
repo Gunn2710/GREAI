@@ -61,7 +61,7 @@ jobs:
       GRE_TEST_DATABASE_URL: postgresql://gre:gre@localhost:5432/gre_test
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version-file: backend/.python-version
           cache: pip
@@ -99,7 +99,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version-file: backend/.python-version
       - name: Python packages (pinned in constraints.txt)
