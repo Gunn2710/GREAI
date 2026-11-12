@@ -213,7 +213,7 @@ def test_word_endpoints(client):
     assert detail["word"]["phrases"] == ["laconic reply", "laconic style", "laconic wit"]
     coach = client.post(
         "/api/coach/chat",
-        json={"messages": [{"role": "user", "content": "hi"}], "word_id": words[0]["id"]},
+        json={"message": "hi", "word_id": words[0]["id"]},
         headers=headers("alice"),
     )
     assert coach.status_code == 503  # AI disabled in tests
@@ -429,7 +429,7 @@ def _mcq_item(client, h):
 
 
 def _coach(client, h, text, **page):
-    return client.post("/api/coach/chat", headers=h, json={"messages": [{"role": "user", "content": text}], **page})
+    return client.post("/api/coach/chat", headers=h, json={"message": text, **page})
 
 
 def test_coach_coaches_without_answering_first(client, db, monkeypatch):
@@ -529,13 +529,48 @@ def test_coach_on_a_word_page(client, db, monkeypatch):
     assert _coach(client, headers("reader"), "hi", word_id=10**9).status_code == 404
 
 
-def test_coach_history_starts_with_the_student(client, monkeypatch):
-    fake = FakeClaude(_text("ok"))
+def test_coach_chat_is_saved_per_user(client, db, monkeypatch):
+    from app.services import coach
+
+    fake = FakeClaude(_text("Hi there."), _text("Set 1."))
     monkeypatch.setattr(ai.claude, "_create", fake)
-    msgs = [{"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"} for i in range(23)]
-    client.post("/api/coach/chat", headers=headers("long"), json={"messages": msgs})
-    sent = fake.calls[0]["messages"]
-    assert sent[0]["role"] == "user" and sent[-1]["content"] == "m22" and len(sent) <= 20
+    h = headers("history")
+    _coach(client, h, "hello")
+    _coach(client, h, "Which set am I on?")
+    # The second question carries on from the saved chat.
+    assert [m["content"] for m in fake.calls[1]["messages"]] == ["hello", "Hi there.", "Which set am I on?"]
+    # After a refresh the chat comes back, for this student only.
+    saved = client.get("/api/coach/history", headers=h).json()["messages"]
+    assert [(m["role"], m["content"]) for m in saved] == [
+        ("user", "hello"), ("assistant", "Hi there."), ("user", "Which set am I on?"), ("assistant", "Set 1.")]
+    assert client.get("/api/coach/history", headers=headers("not-history")).json() == {"messages": []}
+    # A failed reply saves nothing; New chat clears it.
+    monkeypatch.setattr(ai.claude, "_create", FakeClaude())
+    assert _coach(client, h, "hello?", word_id=10**9).status_code == 404
+    assert len(client.get("/api/coach/history", headers=h).json()["messages"]) == 4
+    assert client.delete("/api/coach/history", headers=h).json() == {"messages": []}
+    assert client.get("/api/coach/history", headers=h).json() == {"messages": []}
+
+    # Long chats keep the latest KEEP messages, and Claude gets the latest few, starting with the student.
+    monkeypatch.setattr(coach, "KEEP", 6)
+    fake = FakeClaude(*[_text(f"r{i}") for i in range(5)])
+    monkeypatch.setattr(ai.claude, "_create", fake)
+    for i in range(5):
+        _coach(client, h, f"q{i}")
+    saved = client.get("/api/coach/history", headers=h).json()["messages"]
+    assert [m["content"] for m in saved] == ["q2", "r2", "q3", "r3", "q4", "r4"]
+    monkeypatch.setattr(coach, "SENT", 4)
+    monkeypatch.setattr(ai.claude, "_create", fake := FakeClaude(_text("ok")))
+    _coach(client, h, "q5")
+    assert [m["content"] for m in fake.calls[0]["messages"]] == ["q4", "r4", "q5"]
+
+
+def test_coach_saves_suggested_plans(client, monkeypatch):
+    monkeypatch.setattr(ai.claude, "_create", FakeClaude(_tool("propose_plan", daily_new_words=15), _text("Try this.")))
+    h = headers("plan-history")
+    _coach(client, h, "Help me set a target progress.")
+    reply = client.get("/api/coach/history", headers=h).json()["messages"][-1]
+    assert reply["content"] == "Try this." and reply["proposal"]["changes"] == {"daily_new_words": 15}
 
 
 def test_your_sentence_is_saved_and_shown_after_the_answer(client, db):

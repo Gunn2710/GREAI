@@ -1,7 +1,6 @@
 import type {
   AnswerResult,
   AppConfig,
-  ChatMessage,
   CoachReply,
   Confidence,
   Hint,
@@ -13,6 +12,7 @@ import type {
   PracticeResult,
   PracticeSummary,
   Profile,
+  SavedChatMessage,
   SetsResponse,
   Stats,
   StudyFormat,
@@ -125,7 +125,9 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ sentence }),
     }),
-  coach: (messages: ChatMessage[], page: { study_item_id?: string; practice_item_id?: string; word_id?: number }) =>
-    post<CoachReply>('/coach/chat', { messages, ...page }),
+  coach: (message: string, page: { study_item_id?: string; practice_item_id?: string; word_id?: number }) =>
+    post<CoachReply>('/coach/chat', { message, ...page }),
+  coachHistory: () => request<{ messages: SavedChatMessage[] }>('/coach/history'),
+  clearCoachHistory: () => request<{ messages: SavedChatMessage[] }>('/coach/history', { method: 'DELETE' }),
   mnemonic: (id: number) => post<{ mnemonic: string }>(`/words/${id}/mnemonic`),
 }

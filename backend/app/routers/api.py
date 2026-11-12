@@ -196,13 +196,9 @@ def save_sentence(word_id: int, body: SentenceIn, user_id: str = Depends(current
 
 # ---- AI -----------------------------------------------------------------------
 
-class ChatMessage(BaseModel):
-    role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=2000)
-
-
 class CoachIn(BaseModel):
-    messages: list[ChatMessage] = Field(min_length=1, max_length=40)
+    # The new message; earlier ones are saved on the server (see coach.history).
+    message: str = Field(min_length=1, max_length=2000)
     # What's on screen: the Vocab or Practice question being worked on, or the word page being read.
     study_item_id: str | None = Field(default=None, max_length=36)
     practice_item_id: str | None = Field(default=None, max_length=36)
@@ -212,11 +208,23 @@ class CoachIn(BaseModel):
 @router.post("/coach/chat")
 async def coach_chat(body: CoachIn, user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
     """The study coach (chat bubble): progress, planning, GRE and vocabulary help."""
-    if body.messages[-1].role != "user":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Last message must be from the user")
-    return await coach.chat(db, user_id, [m.model_dump() for m in body.messages],
-                            study_item_id=body.study_item_id, practice_item_id=body.practice_item_id,
-                            word_id=body.word_id)
+    if not body.message.strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Message is empty")
+    return await coach.chat(db, user_id, body.message.strip(), study_item_id=body.study_item_id,
+                            practice_item_id=body.practice_item_id, word_id=body.word_id)
+
+
+@router.get("/coach/history")
+def coach_history(user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
+    """The student's saved chat with the coach, so it comes back after a refresh."""
+    return {"messages": coach.history(db, user_id)}
+
+
+@router.delete("/coach/history")
+def coach_clear(user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Start a new chat."""
+    coach.clear(db, user_id)
+    return {"messages": []}
 
 
 @router.post("/words/{word_id}/mnemonic")

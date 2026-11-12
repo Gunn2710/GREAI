@@ -15,7 +15,7 @@ from sqlalchemy import Text, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app import engine_bridge as eb
-from app.models import Attempt, Card, Confusion, IssuedItem, Word, utcnow
+from app.models import Attempt, Card, CoachMessage, Confusion, IssuedItem, Word, utcnow
 from app.services import placement, practice, stats
 from app.services.ai import claude, word_entry
 from app.services.sets import word_sets
@@ -511,16 +511,53 @@ def _page_context(db: Session, user_id: str, study_item_id: str | None, practice
     return "The student isn't looking at a particular question or word right now.", "", None, False
 
 
+# Each student's chat is kept so it survives a refresh: the latest KEEP messages
+# are shown, and the latest SENT of those go to Claude with each new question.
+KEEP = 100
+SENT = 20
+
+
+def history(db: Session, user_id: str) -> list[dict]:
+    """The student's saved chat, oldest first."""
+    rows = db.scalars(
+        select(CoachMessage).where(CoachMessage.user_id == user_id).order_by(CoachMessage.id.desc()).limit(KEEP)
+    ).all()
+    return [{"role": m.role, "content": m.content, "proposal": m.proposal} for m in reversed(rows)]
+
+
+def clear(db: Session, user_id: str) -> None:
+    """Start a new chat."""
+    db.query(CoachMessage).filter(CoachMessage.user_id == user_id).delete()
+    db.commit()
+
+
+def _save(db: Session, user_id: str, question: str, reply: str, proposal: dict | None) -> None:
+    db.add_all([
+        CoachMessage(user_id=user_id, role="user", content=question),
+        CoachMessage(user_id=user_id, role="assistant", content=reply, proposal=proposal),
+    ])
+    db.flush()
+    # Drop what's beyond the latest KEEP messages.
+    cutoff = db.scalar(
+        select(CoachMessage.id).where(CoachMessage.user_id == user_id)
+        .order_by(CoachMessage.id.desc()).offset(KEEP - 1).limit(1)
+    )
+    if cutoff is not None:
+        db.query(CoachMessage).filter(CoachMessage.user_id == user_id, CoachMessage.id < cutoff).delete()
+    db.commit()
+
+
 def _trim(history: list[dict]) -> list[dict]:
     """The latest messages, starting with one from the student."""
-    recent = history[-20:]
+    recent = [{"role": m["role"], "content": m["content"]} for m in history[-SENT:]]
     while recent and recent[0]["role"] != "user":
         recent = recent[1:]
     return recent
 
 
-async def chat(db: Session, user_id: str, history: list[dict], study_item_id: str | None = None,
+async def chat(db: Session, user_id: str, message: str, study_item_id: str | None = None,
                practice_item_id: str | None = None, word_id: int | None = None) -> dict:
+    """Answer the student's new message, continuing their saved chat, and save both."""
     page, rules, item, answered = _page_context(db, user_id, study_item_id, practice_item_id, word_id)
     system = (
         SYSTEM.format(scope=COACH_SCOPE)
@@ -530,7 +567,8 @@ async def chat(db: Session, user_id: str, history: list[dict], study_item_id: st
         + f"\n\n<progress_snapshot>\n{json.dumps(snapshot(db, user_id), indent=1)}\n</progress_snapshot>"
     )
     tools = Tools(db, user_id)
-    reply = await claude.run_agent(system, _trim(history), TOOLS, tools, max_steps=6)
+    thread = _trim([*history(db, user_id), {"role": "user", "content": message}])
+    reply = await claude.run_agent(system, thread, TOOLS, tools, max_steps=6)
 
     # Help with a question before answering it counts as a hint (for scheduling and ratings).
     counted_as_hint = item is not None and not answered and item.item_type != "flashcard"
@@ -540,4 +578,5 @@ async def chat(db: Session, user_id: str, history: list[dict], study_item_id: st
     proposal = None
     if tools.proposal:
         proposal = {"changes": tools.proposal, "current": plan_of(get_profile(db, user_id))}
+    _save(db, user_id, message, reply, proposal)
     return {"reply": reply, "counted_as_hint": counted_as_hint, "proposal": proposal}

@@ -165,6 +165,11 @@ export interface PlanProposal {
   current: Profile
 }
 
+/** A message from the student's saved chat with the coach. */
+export interface SavedChatMessage extends ChatMessage {
+  proposal: PlanProposal | null
+}
+
 export interface CoachReply {
   reply: string
   counted_as_hint: boolean

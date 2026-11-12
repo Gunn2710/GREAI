@@ -11,9 +11,7 @@ import { cn } from '@/lib/utils'
 import { api, ApiError } from '../lib/api'
 import { useCoach, type CoachPage } from '../lib/coach'
 import { useConfig } from '../lib/config'
-import type { ChatMessage, PlanProposal, Profile } from '../lib/types'
-
-type Message = ChatMessage & { proposal?: PlanProposal | null }
+import type { PlanProposal, Profile, SavedChatMessage as Message } from '../lib/types'
 
 const GENERAL = [
   'What is my current vocabulary progress?',
@@ -48,6 +46,8 @@ export function Coach() {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The saved chat is loaded once, so it survives a refresh (it's per account, on the server).
+  const [loaded, setLoaded] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -59,16 +59,30 @@ export function Coach() {
     if (open) inputRef.current?.focus()
   }, [open])
 
+  useEffect(() => {
+    if (!ai_enabled || loaded) return
+    let cancelled = false
+    api
+      .coachHistory()
+      .then((res) => !cancelled && setMessages(res.messages))
+      .catch(() => {
+        /* no saved chat to show: start empty */
+      })
+      .finally(() => !cancelled && setLoaded(true))
+    return () => {
+      cancelled = true
+    }
+  }, [ai_enabled, loaded])
+
   async function send(text: string) {
     const content = text.trim()
     if (!content || busy) return
-    const thread: Message[] = [...messages, { role: 'user', content }]
+    const thread: Message[] = [...messages, { role: 'user', content, proposal: null }]
     setMessages(thread)
     setDraft('')
     setBusy(true)
     setError(null)
     try {
-      const history = thread.slice(-40).map(({ role, content }) => ({ role, content }))
       const where =
         page?.kind === 'study'
           ? { study_item_id: page.itemId }
@@ -77,7 +91,7 @@ export function Coach() {
             : page?.kind === 'word'
               ? { word_id: page.wordId }
               : {}
-      const res = await api.coach(history, where)
+      const res = await api.coach(content, where)
       setMessages([...thread, { role: 'assistant', content: res.reply, proposal: res.proposal }])
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Something went wrong')
@@ -90,13 +104,14 @@ export function Coach() {
 
   // A page asked the coach something (e.g. a button on the word page).
   useEffect(() => {
-    if (open && queued && !busy) {
+    // Wait for the saved chat, so the question carries on from it.
+    if (open && queued && loaded && !busy) {
       const text = takeQueued()
       if (text) send(text)
     }
     // send() reads the latest state; running on `queued` is enough.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, queued])
+  }, [open, queued, loaded])
 
   useEffect(() => {
     if (!open) return
@@ -156,9 +171,14 @@ export function Coach() {
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={() => {
-                setMessages([])
+              onClick={async () => {
                 setError(null)
+                try {
+                  await api.clearCoachHistory()
+                  setMessages([])
+                } catch (e) {
+                  setError(e instanceof ApiError ? e.message : 'Could not start a new chat')
+                }
               }}
               disabled={busy}
               aria-label="Start a new chat"
@@ -173,7 +193,7 @@ export function Coach() {
         </header>
 
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
-          {messages.length === 0 && (
+          {loaded && messages.length === 0 && (
             <div className="flex flex-col gap-3">
               <p className="text-sm text-muted-foreground">
                 Hi! I can see your progress and help you plan, pick what to work on, and answer GRE and vocabulary
