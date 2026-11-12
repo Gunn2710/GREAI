@@ -276,7 +276,7 @@ def test_coach_sees_the_practice_question(client, db, monkeypatch):
         issued = db.get(IssuedItem, item["id"])
         fake = FakeClaude(_text("Think about it."), _text("Here's why."))
         monkeypatch.setattr(ai.claude, "_create", fake)
-        ask = {"messages": [{"role": "user", "content": "Give me a hint"}], "practice_item_id": item["id"]}
+        ask = {"message": "Give me a hint", "practice_item_id": item["id"]}
 
         res = client.post("/api/coach/chat", headers=h, json=ask).json()
         assert res["counted_as_hint"] is True
@@ -302,7 +302,7 @@ def test_coach_only_opens_your_own_practice_questions(client, monkeypatch):
 
     monkeypatch.setattr(ai.claude, "_create", FakeClaude(_text("hi")))
     item = client.get("/api/practice/next?kind=qc", headers=headers("pr-owner")).json()["item"]
-    ask = {"messages": [{"role": "user", "content": "hi"}], "practice_item_id": item["id"]}
+    ask = {"message": "hi", "practice_item_id": item["id"]}
     assert client.post("/api/coach/chat", headers=headers("pr-other"), json=ask).status_code == 404
     vocab = client.get("/api/study/next?format=mcq", headers=headers("pr-owner")).json()["item"]
     ask["practice_item_id"] = vocab["id"]  # a Vocab question isn't a Practice question

@@ -183,6 +183,21 @@ class WordSentence(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class CoachMessage(Base):
+    """One message in a student's chat with the study coach, kept so the chat survives a refresh."""
+
+    __tablename__ = "coach_messages"
+    __table_args__ = (Index("ix_coach_messages_user_id_id", "user_id", "id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64))
+    role: Mapped[str] = mapped_column(String(16))  # "user" or "assistant"
+    content: Mapped[str] = mapped_column(Text)
+    # A plan change the coach suggested with this reply (see coach.propose_plan).
+    proposal: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Confusion(Base):
     """Which wrong word a user picked when the answer was another word."""
 

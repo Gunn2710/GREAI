@@ -1,6 +1,6 @@
 # TODO
 
-- [ ] CI pipeline (GitHub Actions): backend tests, frontend lint + build
+- [x] CI pipeline (GitHub Actions): backend tests, frontend lint + build
 - [ ] Host frontend on Vercel
 - [ ] Host backend on Vercel (move migrations and word-bank sync out of startup into a deploy step)
 - [ ] Use Supabase's Session pooler string for Docker and Vercel (direct connection is IPv6-only)
@@ -10,13 +10,13 @@
 - [ ] Clerk production instance
 - [ ] Limit Claude usage per user
 - [ ] Grow the word bank
-- [ ] Reading Comprehension
+- [x] Reading Comprehension
 - [ ] Mock test mode
-- [ ] Quant section
+- [x] Quant section
 - [ ] Writing section
 - [ ] Streaks and reminders
 - [ ] Make it phone screen compatible
-- [ ] Add simple github action CI to check for secret safety
-- [ ] Per user Chat history after refresh
+- [x] Add simple github action CI to check for secret safety
+- [x] Per user Chat history after refresh
 - [ ] Prompt Caching and Model Switching
-- [ ] Simplify backend tests
+- [x] Simplify backend tests
