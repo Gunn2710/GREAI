@@ -26,6 +26,11 @@ MCQ_TYPES = ("synonyms", "cloze", "meaning")
 # default), "flashcard" is flashcards only, "mcq" multiple choice only.
 STUDY_FORMATS = ("mixed", "flashcard", "mcq")
 
+# New words or reviews: when both a review is due and a new word is allowed
+# today, the chance the next one is a new word. "review" (the default) always
+# clears due reviews first. The daily new-word limit applies either way.
+NEW_WORD_CHANCE = {"review": 0.0, "balanced": 0.5, "new": 1.0}
+
 
 def mode_chain(chosen: str, fmt: str = "mixed") -> list[str]:
     """Item types to try, in order, for the scheduler's chosen mode."""
@@ -208,10 +213,13 @@ def _client_item(item: IssuedItem) -> dict:
     }
 
 
-def next_item(db: Session, user_id: str, fmt: str = "mixed") -> dict:
+def next_item(db: Session, user_id: str, fmt: str = "mixed", focus: str = "review") -> dict:
     now = eb.now_days()
     progress = current_set(db, user_id)  # before this item, which may start a new word
-    card = _pick_due_card(db, user_id, now) or _start_new_card(db, user_id)
+    if random.random() < NEW_WORD_CHANCE[focus]:
+        card = _start_new_card(db, user_id) or _pick_due_card(db, user_id, now)
+    else:
+        card = _pick_due_card(db, user_id, now) or _start_new_card(db, user_id)
     if card is None:
         next_due = db.scalar(select(func.min(Card.due)).where(Card.user_id == user_id))
         return {

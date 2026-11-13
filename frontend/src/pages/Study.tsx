@@ -17,7 +17,7 @@ import { WordCard } from '../components/WordCard'
 import { YourSentence } from '../components/YourSentence'
 import { useCoachPage } from '../lib/coach'
 import { api, ApiError } from '../lib/api'
-import type { AnswerResult, StudyFormat, StudyItem, WordSet } from '../lib/types'
+import type { AnswerResult, StudyFocus, StudyFormat, StudyItem, WordSet } from '../lib/types'
 
 const FORMATS: { format: StudyFormat; label: string }[] = [
   { format: 'mixed', label: 'Mixed' },
@@ -25,6 +25,23 @@ const FORMATS: { format: StudyFormat; label: string }[] = [
   { format: 'mcq', label: 'Multiple choice' },
 ]
 const FORMAT_KEY = 'study-format'
+
+const FOCUSES: { focus: StudyFocus; label: string; title: string }[] = [
+  { focus: 'review', label: 'Less', title: 'Clear due reviews before new words' },
+  { focus: 'balanced', label: 'Balanced', title: 'About half new words, half reviews' },
+  { focus: 'new', label: 'More', title: "New words first, up to today's limit, then reviews" },
+]
+const FOCUS_KEY = 'study-focus'
+
+/** The last focus picked, remembered per browser like the format. */
+function savedFocus(): StudyFocus {
+  try {
+    const v = localStorage.getItem(FOCUS_KEY)
+    return FOCUSES.some((f) => f.focus === v) ? (v as StudyFocus) : 'review'
+  } catch {
+    return 'review'
+  }
+}
 
 /** The last format picked, remembered per browser (a convenience only). */
 function savedFormat(): StudyFormat {
@@ -61,6 +78,7 @@ export default function Study() {
   const [count, setCount] = useState(0)
   const [set, setSet] = useState<(WordSet & { total: number }) | null>(null)
   const [format, setFormat] = useState<StudyFormat>(savedFormat)
+  const [focus, setFocus] = useState<StudyFocus>(savedFocus)
   // The study coach (chat bubble) sees the question on screen.
   useCoachPage(
     phase.kind === 'question' || phase.kind === 'result'
@@ -76,7 +94,7 @@ export default function Study() {
   const loadNext = useCallback(async () => {
     setPhase({ kind: 'loading' })
     try {
-      const res = await api.next(format)
+      const res = await api.next(format, focus)
       if (!res.done) setSet(res.set)
       setPhase(
         res.done
@@ -86,7 +104,7 @@ export default function Study() {
     } catch (e) {
       setPhase({ kind: 'error', message: e instanceof ApiError ? e.message : 'Could not reach the server' })
     }
-  }, [format])
+  }, [format, focus])
 
   useEffect(() => {
     loadNext()
@@ -131,21 +149,46 @@ export default function Study() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-      <Tabs
-        value={format}
-        onValueChange={(v) => {
-          setFormat(v as StudyFormat)
-          saveFormat(v as StudyFormat)
-        }}
-      >
-        <TabsList className="w-full sm:w-fit" aria-label="Question format">
-          {FORMATS.map((f) => (
-            <TabsTrigger key={f.format} value={f.format} className="sm:px-3">
-              {f.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+        <Tabs
+          value={format}
+          onValueChange={(v) => {
+            setFormat(v as StudyFormat)
+            saveFormat(v as StudyFormat)
+          }}
+          className="gap-1.5"
+        >
+          <span id="format-label" className="text-xs font-medium text-muted-foreground">
+            Study mode
+          </span>
+          <TabsList className="w-full sm:w-fit" aria-labelledby="format-label">
+            {FORMATS.map((f) => (
+              <TabsTrigger key={f.format} value={f.format} className="sm:px-3">
+                {f.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <Tabs
+          value={focus}
+          onValueChange={(v) => {
+            setFocus(v as StudyFocus)
+            savePref(FOCUS_KEY, v)
+          }}
+          className="gap-1.5"
+        >
+          <span id="focus-label" className="text-xs font-medium text-muted-foreground">
+            New word frequency
+          </span>
+          <TabsList className="w-full sm:w-fit" aria-labelledby="focus-label">
+            {FOCUSES.map((f) => (
+              <TabsTrigger key={f.focus} value={f.focus} title={f.title} className="sm:px-3">
+                {f.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
 
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         {set ? (

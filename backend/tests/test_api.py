@@ -93,6 +93,30 @@ def test_new_word_flow(client, db):
     assert again.status_code == 409
 
 
+def test_focus_leans_toward_reviews_or_new_words(client, db):
+    h = headers("focus")
+    client.put("/api/me/profile", json={"daily_new_words": 2}, headers=h)
+    first = client.get("/api/study/next", headers=h).json()
+    client.post(f"/api/study/items/{first['item']['id']}/answer",
+                json={"response": {"self_rating": 3}, "response_ms": 3000}, headers=h)
+    reviewed = db.get(IssuedItem, first["item"]["id"]).word_id
+    card = db.scalar(select(Card).where(Card.user_id == "focus", Card.word_id == reviewed))
+    card.due = utcnow() - timedelta(minutes=1)
+    db.commit()
+
+    def next_word(focus):
+        res = client.get(f"/api/study/next?focus={focus}", headers=h).json()
+        return db.get(IssuedItem, res["item"]["id"]).word_id, res["is_new_word"]
+
+    # A review is due and a new word is allowed: the focus decides which comes first.
+    assert next_word("review") == (reviewed, False)
+    word, is_new = next_word("new")
+    assert is_new and word != reviewed
+    # Past the daily limit, "new" still serves the due review.
+    assert next_word("new") == (reviewed, False)
+    assert client.get("/api/study/next?focus=sideways", headers=h).status_code == 422
+
+
 def test_daily_new_word_limit(client, db):
     h = headers("bob")
     client.put("/api/me/profile", json={"daily_new_words": 3}, headers=h)

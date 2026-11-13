@@ -208,6 +208,9 @@ export type PracticeType = 'tc' | 'se' | 'rc' | 'qc' | 'qmc' | 'qne'
 export type PracticeKind = PracticeType | 'mixed' | 'quant'
 export type StudyFormat = 'mixed' | 'flashcard' | 'mcq'
 
+/** Whether the next Vocab word leans toward due reviews or new words. */
+export type StudyFocus = 'review' | 'balanced' | 'new'
+
 export interface DataTable {
   columns: string[]
   rows: string[][]
