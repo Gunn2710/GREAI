@@ -15,6 +15,7 @@ import type {
   SavedChatMessage,
   SetsResponse,
   Stats,
+  StudyFocus,
   StudyFormat,
   WordDetail,
   WordListEntry,
@@ -90,7 +91,8 @@ export const api = {
   profile: () => request<Profile>('/me/profile'),
   saveProfile: (p: Profile) => request<Profile>('/me/profile', { method: 'PUT', body: JSON.stringify(p) }),
 
-  next: (format: StudyFormat = 'mixed') => request<NextResponse>(`/study/next?format=${format}`),
+  next: (format: StudyFormat = 'mixed', focus: StudyFocus = 'review') =>
+    request<NextResponse>(`/study/next?format=${format}&focus=${focus}`),
   hint: (itemId: string) => post<Hint>(`/study/items/${itemId}/hint`),
   studyMore: (words: number) => post<{ extra_today: number; new_word_limit: number }>('/study/more', { words }),
   answer: (itemId: string, response: Record<string, unknown>, responseMs: number, confidence?: Confidence) =>

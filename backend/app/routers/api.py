@@ -63,8 +63,10 @@ def update_profile(body: ProfileIn, user_id: str = Depends(current_user_id), db:
 
 @router.get("/study/next")
 def next_item(format: Literal["mixed", "flashcard", "mcq"] = "mixed",
+              focus: Literal["review", "balanced", "new"] = "review",
               user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
-    return study.next_item(db, user_id, format)
+    """The next Vocab question. `focus` leans toward reviews (the default) or new words."""
+    return study.next_item(db, user_id, format, focus)
 
 
 class StudyMoreIn(BaseModel):
