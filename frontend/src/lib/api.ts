@@ -1,7 +1,8 @@
 import type {
   AnswerResult,
   AppConfig,
-  CoachReply,
+  CoachEvent,
+  CoachNote,
   Confidence,
   Hint,
   NextResponse,
@@ -61,7 +62,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
   headers.set('Content-Type', 'application/json')
   const token = await tokenProvider()
@@ -79,7 +80,41 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new ApiError(res.status, detail)
   }
+  return res
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await send(path, init)
   return res.json() as Promise<T>
+}
+
+/** A coach reply as it's written: calls `onEvent` for each server-sent event. */
+async function coachStream(
+  message: string,
+  page: { study_item_id?: string; practice_item_id?: string; word_id?: number },
+  onEvent: (event: CoachEvent) => void,
+): Promise<void> {
+  const res = await send('/coach/chat/stream', { method: 'POST', body: JSON.stringify({ message, ...page }) })
+  if (!res.body) throw new ApiError(500, 'No reply from the server')
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done })
+    let end
+    while ((end = buffer.indexOf('\n\n')) >= 0) {
+      const chunk = buffer.slice(0, end)
+      buffer = buffer.slice(end + 2)
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('data: ')) continue
+        const event = JSON.parse(line.slice(6)) as CoachEvent
+        if (event.type === 'error') throw new ApiError(500, event.detail)
+        onEvent(event)
+      }
+    }
+    if (done) return
+  }
 }
 
 const post = <T>(path: string, body?: unknown) =>
@@ -127,9 +162,12 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ sentence }),
     }),
-  coach: (message: string, page: { study_item_id?: string; practice_item_id?: string; word_id?: number }) =>
-    post<CoachReply>('/coach/chat', { message, ...page }),
-  coachHistory: () => request<{ messages: SavedChatMessage[] }>('/coach/history'),
+  coachStream,
+  coachHistory: () => request<{ messages: SavedChatMessage[]; remaining: number | null }>('/coach/history'),
+  coachNotes: () => request<{ notes: CoachNote[] }>('/coach/notes'),
+  deleteCoachNote: (id: number) => request<{ notes: CoachNote[] }>(`/coach/notes/${id}`, { method: 'DELETE' }),
+  reviewNow: (wordIds: number[]) => post<{ due_now: number }>('/study/review-now', { word_ids: wordIds }),
+  markKnown: (id: number) => post<{ card: CardSummary }>(`/words/${id}/known`),
   clearCoachHistory: () => request<{ messages: SavedChatMessage[] }>('/coach/history', { method: 'DELETE' }),
   mnemonic: (id: number) => post<{ mnemonic: string }>(`/words/${id}/mnemonic`),
 }

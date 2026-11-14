@@ -427,14 +427,44 @@ def test_study_more_is_for_today_only(client, db):
 
 
 class FakeClaude:
-    """Stands in for the Messages API: replays canned responses, records calls."""
+    """Stands in for the streamed Messages API (ClaudeService._turn): replays canned
+    responses, records calls."""
 
     def __init__(self, *responses):
         self.responses, self.calls = list(responses), []
 
-    async def __call__(self, **params):
+    def __call__(self, **params):
         self.calls.append({**params, "messages": list(params["messages"])})
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+
+        async def stream():
+            for block in response.content:
+                if block.type == "text":
+                    yield "text", block.text
+            yield "message", response
+        return stream()
+
+
+def prompt(call) -> str:
+    """Everything the coach was told in one call: the cached system prompt and the
+    per-turn context (a system message after the student's message)."""
+    system = "".join(b["text"] for b in call["system"])
+    return system + "".join(m["content"] for m in call["messages"] if m["role"] == "system")
+
+
+def said(call) -> list[str]:
+    """The chat as sent in one call: the text of each student and coach message."""
+    out = []
+    for m in call["messages"]:
+        if m["role"] == "system":
+            continue
+        content = m["content"]
+        out.append(content if isinstance(content, str) else "".join(b.get("text", "") for b in content))
+    return out
+
+
+def reply_of(res) -> dict:
+    return {k: res[k] for k in ("reply", "counted_as_hint", "proposal")}
 
 
 def _text(text):
@@ -462,11 +492,11 @@ def test_coach_coaches_without_answering_first(client, db, monkeypatch):
     word = db.get(Word, db.get(IssuedItem, item["id"]).word_id)
     other = db.scalar(select(Word).where(Word.id != word.id).limit(1))
     fake = FakeClaude(_tool("look_up_word", word=other.lemma.upper()), _text("Think about the root."))
-    monkeypatch.setattr(ai.claude, "_create", fake)
+    monkeypatch.setattr(ai.claude, "_turn", fake)
 
     res = _coach(client, h, "What's the answer?", study_item_id=item["id"]).json()
-    assert res == {"reply": "Think about the root.", "counted_as_hint": True, "proposal": None}
-    system = fake.calls[0]["system"]
+    assert reply_of(res) == {"reply": "Think about the root.", "counted_as_hint": True, "proposal": None}
+    system = prompt(fake.calls[0])
     assert "HAS NOT ANSWERED YET" in system and "Correct answer:" in system and word.lemma in system
     # The tool ran against the word bank and its result went back to Claude.
     tool_result = fake.calls[1]["messages"][-1]["content"][0]
@@ -482,11 +512,11 @@ def test_coach_explains_freely_after_answering(client, db, monkeypatch):
                 json={"response": {"selected": 0}, "response_ms": 4000})
     lemma = db.get(Word, db.get(IssuedItem, item["id"]).word_id).lemma
     fake = FakeClaude(_tool("word_history", word=lemma), _text("Here's why."))
-    monkeypatch.setattr(ai.claude, "_create", fake)
+    monkeypatch.setattr(ai.claude, "_turn", fake)
 
     res = _coach(client, h, "Why?", study_item_id=item["id"]).json()
-    assert res == {"reply": "Here's why.", "counted_as_hint": False, "proposal": None}
-    system = fake.calls[0]["system"]
+    assert reply_of(res) == {"reply": "Here's why.", "counted_as_hint": False, "proposal": None}
+    system = prompt(fake.calls[0])
     assert "has answered" in system and "Chose A" in system
     history = fake.calls[1]["messages"][-1]["content"][0]["content"]
     assert '"recent_attempts": [{' in history
@@ -494,7 +524,7 @@ def test_coach_explains_freely_after_answering(client, db, monkeypatch):
 
 def test_coach_only_sees_your_own_questions(client, monkeypatch):
     item = _mcq_item(client, headers("owner"))
-    monkeypatch.setattr(ai.claude, "_create", FakeClaude(_text("hi")))
+    monkeypatch.setattr(ai.claude, "_turn", FakeClaude(_text("hi")))
     res = _coach(client, headers("someone-else"), "hi", study_item_id=item["id"])
     assert res.status_code == 404
 
@@ -507,11 +537,11 @@ def test_coach_knows_your_progress_and_stays_on_topic(client, db, monkeypatch):
     client.put("/api/me/profile", headers=h, json={"test_date": (utcnow().date() + timedelta(days=50)).isoformat(),
                                                     "target_verbal": 160, "daily_new_words": 12})
     fake = FakeClaude(_tool("vocab_sets"), _text("You're on set 1."))
-    monkeypatch.setattr(ai.claude, "_create", fake)
+    monkeypatch.setattr(ai.claude, "_turn", fake)
 
     res = _coach(client, h, "What is my current vocabulary progress?").json()
-    assert res == {"reply": "You're on set 1.", "counted_as_hint": False, "proposal": None}
-    system = fake.calls[0]["system"]
+    assert reply_of(res) == {"reply": "You're on set 1.", "counted_as_hint": False, "proposal": None}
+    system = prompt(fake.calls[0])
     assert "STAY ON TOPIC" in system and "isn't looking at a particular question" in system
     snap = system.split("<progress_snapshot>")[1].split("</progress_snapshot>")[0]
     import json
@@ -532,7 +562,7 @@ def test_coach_proposes_plan_changes_without_saving(client, db, monkeypatch):
         _tool("propose_plan", daily_new_words=20, test_date=later),
         _text("Here's a plan."),
     )
-    monkeypatch.setattr(ai.claude, "_create", fake)
+    monkeypatch.setattr(ai.claude, "_turn", fake)
 
     res = _coach(client, h, "Help me set a target progress.").json()
     assert res["proposal"] == {
@@ -546,10 +576,10 @@ def test_coach_proposes_plan_changes_without_saving(client, db, monkeypatch):
 def test_coach_on_a_word_page(client, db, monkeypatch):
     word = db.scalar(select(Word).limit(1))
     fake = FakeClaude(_text("ok"))
-    monkeypatch.setattr(ai.claude, "_create", fake)
+    monkeypatch.setattr(ai.claude, "_turn", fake)
     res = _coach(client, headers("reader"), "Give me a memory trick", word_id=word.id).json()
     assert res["counted_as_hint"] is False
-    assert f"word page for “{word.lemma}”" in fake.calls[0]["system"]
+    assert f"word page for “{word.lemma}”" in prompt(fake.calls[0])
     assert _coach(client, headers("reader"), "hi", word_id=10**9).status_code == 404
 
 
@@ -557,40 +587,40 @@ def test_coach_chat_is_saved_per_user(client, db, monkeypatch):
     from app.services import coach
 
     fake = FakeClaude(_text("Hi there."), _text("Set 1."))
-    monkeypatch.setattr(ai.claude, "_create", fake)
+    monkeypatch.setattr(ai.claude, "_turn", fake)
     h = headers("history")
     _coach(client, h, "hello")
     _coach(client, h, "Which set am I on?")
     # The second question carries on from the saved chat.
-    assert [m["content"] for m in fake.calls[1]["messages"]] == ["hello", "Hi there.", "Which set am I on?"]
+    assert said(fake.calls[1]) == ["hello", "Hi there.", "Which set am I on?"]
     # After a refresh the chat comes back, for this student only.
     saved = client.get("/api/coach/history", headers=h).json()["messages"]
     assert [(m["role"], m["content"]) for m in saved] == [
         ("user", "hello"), ("assistant", "Hi there."), ("user", "Which set am I on?"), ("assistant", "Set 1.")]
-    assert client.get("/api/coach/history", headers=headers("not-history")).json() == {"messages": []}
+    assert client.get("/api/coach/history", headers=headers("not-history")).json()["messages"] == []
     # A failed reply saves nothing; New chat clears it.
-    monkeypatch.setattr(ai.claude, "_create", FakeClaude())
+    monkeypatch.setattr(ai.claude, "_turn", FakeClaude())
     assert _coach(client, h, "hello?", word_id=10**9).status_code == 404
     assert len(client.get("/api/coach/history", headers=h).json()["messages"]) == 4
     assert client.delete("/api/coach/history", headers=h).json() == {"messages": []}
-    assert client.get("/api/coach/history", headers=h).json() == {"messages": []}
+    assert client.get("/api/coach/history", headers=h).json()["messages"] == []
 
     # Long chats keep the latest KEEP messages, and Claude gets the latest few, starting with the student.
     monkeypatch.setattr(coach, "KEEP", 6)
     fake = FakeClaude(*[_text(f"r{i}") for i in range(5)])
-    monkeypatch.setattr(ai.claude, "_create", fake)
+    monkeypatch.setattr(ai.claude, "_turn", fake)
     for i in range(5):
         _coach(client, h, f"q{i}")
     saved = client.get("/api/coach/history", headers=h).json()["messages"]
     assert [m["content"] for m in saved] == ["q2", "r2", "q3", "r3", "q4", "r4"]
     monkeypatch.setattr(coach, "SENT", 4)
-    monkeypatch.setattr(ai.claude, "_create", fake := FakeClaude(_text("ok")))
+    monkeypatch.setattr(ai.claude, "_turn", fake := FakeClaude(_text("ok")))
     _coach(client, h, "q5")
-    assert [m["content"] for m in fake.calls[0]["messages"]] == ["q4", "r4", "q5"]
+    assert said(fake.calls[0]) == ["q4", "r4", "q5"]
 
 
 def test_coach_saves_suggested_plans(client, monkeypatch):
-    monkeypatch.setattr(ai.claude, "_create", FakeClaude(_tool("propose_plan", daily_new_words=15), _text("Try this.")))
+    monkeypatch.setattr(ai.claude, "_turn", FakeClaude(_tool("propose_plan", daily_new_words=15), _text("Try this.")))
     h = headers("plan-history")
     _coach(client, h, "Help me set a target progress.")
     reply = client.get("/api/coach/history", headers=h).json()["messages"][-1]
@@ -634,3 +664,140 @@ def test_flashcard_back_carries_your_sentence(client, db):
     again = client.get("/api/study/next?format=flashcard", headers=h).json()["item"]  # same unanswered card
     assert db.get(IssuedItem, again["id"]).word_id == word_id
     assert again["payload"]["my_sentence"] == "A cue."
+
+
+def _tools(*calls):
+    """One response that calls several tools: _tools(("name", {args}), ...)."""
+    from types import SimpleNamespace as NS
+    return NS(stop_reason="tool_use", content=[NS(type="tool_use", id=f"tu_{i}", name=n, input=a)
+                                               for i, (n, a) in enumerate(calls)])
+
+
+def _events(res) -> list[dict]:
+    import json
+    return [json.loads(line[6:]) for line in res.text.splitlines() if line.startswith("data: ")]
+
+
+def test_coach_streams_its_reply_and_caches_the_prompt(client, monkeypatch):
+    monkeypatch.setattr(ai.claude.settings, "ai_enabled", True)
+    fake = FakeClaude(_tool("vocab_sets"), _text("You're on set 1."))
+    monkeypatch.setattr(ai.claude, "_turn", fake)
+    h = headers("streamer")
+    res = client.post("/api/coach/chat/stream", headers=h, json={"message": "How am I doing?"})
+    assert res.status_code == 200 and res.headers["content-type"].startswith("text/event-stream")
+    events = _events(res)
+    assert events[0] == {"type": "status", "text": "Checking your study sets"}
+    assert events[1] == {"type": "text", "text": "You're on set 1."}
+    assert events[-1]["type"] == "done" and events[-1]["reply"] == "You're on set 1."
+
+    # The fixed instructions and tools are cached; what changes each turn comes after the
+    # student's message, and the conversation is cached up to the latest message.
+    first, second = fake.calls
+    assert first["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert [m["role"] for m in first["messages"]] == ["user", "system"]
+    assert first["messages"][0]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert "<progress_snapshot>" in first["messages"][1]["content"]
+    assert [m["role"] for m in second["messages"]] == ["user", "system", "assistant", "user"]
+    assert second["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in second["messages"][0]["content"][-1]
+
+    # Errors before the reply starts are plain HTTP errors.
+    assert client.post("/api/coach/chat/stream", headers=h,
+                       json={"message": "hi", "word_id": 10**9}).status_code == 404
+
+
+def test_daily_ai_limit(client, db, monkeypatch):
+    from types import SimpleNamespace as NS
+    from app.models import AIUsage
+    from app.services.ai import claude
+
+    monkeypatch.setattr(claude.settings, "ai_daily_limit", 2)
+    reply = _text("ok")
+    reply.usage = NS(input_tokens=100, output_tokens=20, cache_read_input_tokens=80, cache_creation_input_tokens=0)
+    monkeypatch.setattr(ai.claude, "_turn", FakeClaude(reply, _text("ok")))
+    h = headers("limited")
+    assert _coach(client, h, "one").json()["remaining"] == 1
+    assert _coach(client, h, "two").json()["remaining"] == 0
+    third = _coach(client, h, "three")
+    assert third.status_code == 429 and "60" not in third.json()["detail"]
+    monkeypatch.setattr(claude.settings, "ai_enabled", True)
+    assert client.post("/api/coach/chat/stream", headers=h, json={"message": "four"}).status_code == 429
+    assert client.post("/api/words/1/mnemonic", headers=h).status_code == 429
+    usage = db.get(AIUsage, ("limited", utcnow().date()))
+    assert (usage.requests, usage.input_tokens, usage.cache_read_tokens) == (2, 100, 80)
+    # Past the limit, Vocab stops asking for sentences that need Claude to grade them.
+    for _ in range(5):
+        item = client.get("/api/study/next", headers=h).json()["item"]
+        assert item["item_type"] != "usage"
+
+
+def test_coach_offers_actions_that_the_student_confirms(client, db, monkeypatch):
+    h = headers("actor")
+    first = client.get("/api/study/next", headers=h).json()["item"]
+    client.post(f"/api/study/items/{first['id']}/answer", headers=h,
+                json={"response": {"self_rating": 3}, "response_ms": 3000})
+    started = db.get(Word, db.get(IssuedItem, first["id"]).word_id)
+    other = db.scalar(select(Word).where(Word.id != started.id).order_by(Word.id.desc()).limit(1))
+    sentence = f"Her {started.lemma} remark said it all."
+    fake = FakeClaude(
+        _tools(("review_now", {"words": [started.lemma, other.lemma], "title": "Drill your mix-ups"}),
+               ("mark_known", {"word": other.lemma}),
+               ("propose_study_settings", {"new_word_frequency": "more", "study_mode": "flashcards"}),
+               ("open_practice", {"kind": "rc"}),
+               ("save_sentence", {"word": started.lemma, "sentence": sentence}),
+               ("save_sentence", {"word": started.lemma, "sentence": "No word here."})),
+        _text("Here are some options."),
+    )
+    monkeypatch.setattr(ai.claude, "_turn", fake)
+    res = _coach(client, h, "Help me drill").json()
+    assert res["actions"] == [
+        {"type": "review_now", "title": "Drill your mix-ups", "words": [{"id": started.id, "lemma": started.lemma}]},
+        {"type": "mark_known", "word": {"id": other.id, "lemma": other.lemma}},
+        {"type": "study_settings", "changes": {"focus": "new", "format": "flashcard"}},
+        {"type": "open_practice", "section": "verbal", "kind": "rc", "label": "Reading Comprehension"},
+    ]  # at most 4 offers: the sentence ones were refused
+    results = [b["content"] for b in fake.calls[1]["messages"][-1]["content"]]
+    assert "Left out" in results[0] and other.lemma in results[0]
+    assert "at most 4" in results[4]
+    # Nothing happened yet; the buttons do it.
+    card = db.get(Card, ("actor", started.id))
+    assert card.due > utcnow() and db.get(Card, ("actor", other.id)) is None
+    assert client.post("/api/study/review-now", headers=h, json={"word_ids": [started.id, other.id]}).json() == {
+        "due_now": 1}
+    db.expire_all()
+    assert db.get(Card, ("actor", started.id)).due <= utcnow()
+    known = client.post(f"/api/words/{other.id}/known", headers=h).json()["card"]
+    assert known["reps"] == 1 and db.get(Card, ("actor", other.id)).origin == "known"
+    assert client.post("/api/words/999999999/known", headers=h).status_code == 404
+    # Offers come back with the chat after a refresh.
+    saved = client.get("/api/coach/history", headers=h).json()["messages"][-1]
+    assert saved["actions"] == res["actions"]
+
+    monkeypatch.setattr(ai.claude, "_turn", FakeClaude(
+        _tool("save_sentence", word=started.lemma, sentence=sentence), _text("Nice sentence!")))
+    assert _coach(client, h, sentence).json()["actions"] == [
+        {"type": "save_sentence", "word": {"id": started.id, "lemma": started.lemma}, "sentence": sentence}]
+
+
+def test_coach_keeps_notes_the_student_can_delete(client, monkeypatch):
+    h = headers("noted")
+    fake = FakeClaude(_tool("remember", note="Aiming for 165 Verbal by March."), _text("Got it."))
+    monkeypatch.setattr(ai.claude, "_turn", fake)
+    assert _coach(client, h, "I want 165 Verbal by March").json()["actions"] == [
+        {"type": "noted", "text": "Aiming for 165 Verbal by March."}]
+    notes = client.get("/api/coach/notes", headers=h).json()["notes"]
+    assert [n["text"] for n in notes] == ["Aiming for 165 Verbal by March."]
+    note_id = notes[0]["id"]
+
+    # Later chats see the notes (with ids), and the coach can drop one.
+    fake = FakeClaude(_tool("forget", note_id=note_id), _text("Updated."))
+    monkeypatch.setattr(ai.claude, "_turn", fake)
+    _coach(client, h, "Actually my test moved")
+    assert f"[{note_id}] Aiming for 165 Verbal by March." in prompt(fake.calls[0])
+    assert client.get("/api/coach/notes", headers=h).json()["notes"] == []
+
+    monkeypatch.setattr(ai.claude, "_turn", FakeClaude(_tool("remember", note="Likes word roots."), _text("Noted.")))
+    _coach(client, h, "I like learning roots")
+    note_id = client.get("/api/coach/notes", headers=h).json()["notes"][0]["id"]
+    assert client.delete(f"/api/coach/notes/{note_id}", headers=headers("someone-else")).status_code == 404
+    assert client.delete(f"/api/coach/notes/{note_id}", headers=h).json() == {"notes": []}

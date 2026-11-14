@@ -165,15 +165,47 @@ export interface PlanProposal {
   current: Profile
 }
 
+interface WordRef {
+  id: number
+  lemma: string
+}
+
+/** Something the coach offered to do (each one waits for a button click), or a note it made. */
+export type CoachAction =
+  | { type: 'review_now'; title: string; words: WordRef[] }
+  | { type: 'mark_known'; word: WordRef }
+  | { type: 'study_settings'; changes: { focus?: StudyFocus; format?: StudyFormat } }
+  | { type: 'open_practice'; section: 'verbal' | 'quant'; kind: string; label: string }
+  | { type: 'save_sentence'; word: WordRef; sentence: string }
+  | { type: 'noted'; text: string }
+  | { type: 'forgot'; text: string }
+
 /** A message from the student's saved chat with the coach. */
 export interface SavedChatMessage extends ChatMessage {
   proposal: PlanProposal | null
+  actions: CoachAction[]
 }
 
 export interface CoachReply {
   reply: string
   counted_as_hint: boolean
   proposal: PlanProposal | null
+  actions: CoachAction[]
+  /** AI requests left today, or null when there is no limit. */
+  remaining: number | null
+}
+
+/** What a streamed coach reply sends as it's written. */
+export type CoachEvent =
+  | { type: 'text'; text: string }
+  | { type: 'status'; text: string }
+  | ({ type: 'done' } & CoachReply)
+  | { type: 'error'; detail: string }
+
+export interface CoachNote {
+  id: number
+  text: string
+  created_at: string
 }
 
 export interface PlacementItem {

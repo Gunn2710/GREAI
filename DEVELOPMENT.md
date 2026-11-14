@@ -202,15 +202,20 @@ Students can save their own sentence with any word (`word_sentences` table, `PUT
 
 ### AI features (Claude)
 
-- **Study coach** (`app/services/coach.py`, `src/components/Coach.tsx`). The chat bubble on every page.
+- **Study coach** (`app/services/coach.py`, `src/components/Coach.tsx`, `src/lib/coach.tsx`). The home page is the coach's chat; every other page has it as a chat bubble. Both show the same conversation, which is saved per account (`coach_messages`) so it survives a refresh.
   - **Context.** Every message comes with a snapshot of the student's progress: plan, vocab sets and comfort tiers, practice ratings, and placement level. Tools let it look further: set-by-set progress, weak words and confused pairs, recent activity, word entries, and a student's history with one word.
   - **What's on screen.** Pages tell the coach what they show (`useCoachPage`): the Vocab or Practice question, or the word page. On a question it won't give the answer away before the student answers, and asking counts as a hint.
-  - **Plan changes.** Changes to the test date, target scores or new words per day are only proposed (`propose_plan`). The student saves them with a button.
+  - **Actions, confirmed with a button.** The coach only offers; nothing changes until the student clicks. It can offer plan changes (`propose_plan`), bring started words back for review now (`review_now`, `POST /api/study/review-now`), mark a word as known (`mark_known`, `POST /api/words/{id}/known`), change the Vocab study settings (`propose_study_settings`, saved in the browser), save the student's sentence (`save_sentence`), and link to a Practice type (`open_practice`). Offers are saved with the reply (`coach_messages.actions`).
+  - **Notes.** It keeps short notes about the student between chats (`remember` / `forget`, `coach_notes` table, at most 30). They're sent with every message, and the student can see and delete them from the chat's notes button (`GET` / `DELETE /api/coach/notes`).
+  - **Streaming.** `POST /api/coach/chat/stream` sends the reply as server-sent events while it's written: text pieces, a status line while a tool runs, then a final event with the whole reply and any offers. `POST /api/coach/chat` returns the same final result in one response.
+  - **Prompt caching.** The instructions and tool definitions are cached. What changes each turn (snapshot, page, notes) goes in a system message after the student's message, and the conversation is cached up to the latest message, so earlier turns and tool steps are reused.
   - **Scope.** It stays on progress, planning, the GRE, and vocabulary, and politely declines anything else.
 - **Usage grading** (`ai.py`). Judges a sentence the student writes with a word, returning structured JSON.
 - **Mnemonics** (`ai.py`). One memorable sound-alike or image per word, on request.
 
 All of them use `claude-opus-5-5` by default (`GRE_CLAUDE_MODEL`), with server-side refusal fallbacks turned on. Prompts always include the word's verified entry, so Claude explains the app's answer key instead of inventing its own. Set `GRE_AI_ENABLED=false` to run without credentials; the coach and mnemonics are then hidden, and usage questions are never served.
+
+**Daily limit.** Each student gets `GRE_AI_DAILY_LIMIT` Claude requests per day (default 60, reset at midnight UTC; `0` turns it off). A request is one coach message, mnemonic, or graded sentence, however many API calls it takes. Requests and tokens, including cache reads and writes, are recorded per student per day in `ai_usage` (`app/services/limits.py`). Past the limit the coach and mnemonics return 429, and Vocab stops serving questions that need Claude to grade them; one already on screen is still graded.
 
 ## Adding a question type
 
