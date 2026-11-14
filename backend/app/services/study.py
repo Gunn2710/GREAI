@@ -1,7 +1,7 @@
 """Study loop: pick the next word and quiz mode, grade answers, update the model."""
 import random
 import uuid
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.items import vocab  # noqa: F401  (registers vocab item types)
 from app.items.base import get_item_type
 from app.models import Attempt, Card, Confusion, IssuedItem, Profile, UserParams, Word, WordSentence, utcnow
+from app.services import limits
 from app.services.ai import claude
 from app.services.difficulty import FAST_TRACK_P, known_card, word_difficulty
 from app.services.sets import current_set
@@ -230,7 +231,9 @@ def next_item(db: Session, user_id: str, fmt: str = "mixed", focus: str = "revie
         }
 
     word = db.get(Word, card.word_id)
-    mode = eb.model.choose_mode(eb.card_to_engine(card), random.random(), claude.enabled)
+    # Past today's AI limit, skip questions that need Claude to grade them.
+    ai_ok = claude.enabled and limits.allowed(db, user_id)
+    mode = eb.model.choose_mode(eb.card_to_engine(card), random.random(), ai_ok)
     built, type_name = None, None
     for type_name in mode_chain(eb.NAME_BY_MODE[mode], fmt):
         built = get_item_type(type_name).build(db, user_id, word)
@@ -300,7 +303,10 @@ async def answer(
     confidence: str | None,
 ) -> dict:
     item = _get_open_item(db, user_id, item_id)
-    grade = await get_item_type(item.item_type).grade(db, item, response)
+    # A sentence graded by Claude counts toward the daily limit, but a question
+    # already on screen is always graded.
+    with limits.metered(db, user_id, check=False):
+        grade = await get_item_type(item.item_type).grade(db, item, response)
 
     card = db.get(Card, (user_id, item.word_id))
     params = get_params(db, user_id)
@@ -353,3 +359,38 @@ async def answer(
         "word": word_detail(db.get(Word, item.word_id)),
         "my_sentence": my_sentence(db, user_id, item.word_id),
     }
+
+
+# ---- things the study coach offers and the student confirms ----
+
+MAX_REVIEW_NOW = 20
+KNOWN_DUE_DAYS = 4
+
+
+def review_now(db: Session, user_id: str, word_ids: list[int]) -> dict:
+    """Make words the student has started due right away (e.g. to drill mix-ups)."""
+    cards = db.scalars(select(Card).where(Card.user_id == user_id,
+                                          Card.word_id.in_(word_ids[:MAX_REVIEW_NOW]))).all()
+    now = utcnow()
+    for card in cards:
+        card.due = min(card.due, now)
+    db.commit()
+    return {"due_now": len(cards)}
+
+
+def mark_known(db: Session, user_id: str, word_id: int) -> dict:
+    """The student says they already know a word: skip its learning steps and
+    check recall in a few days. A miss then sends it back to relearning."""
+    if db.get(Word, word_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Word not found")
+    card = db.get(Card, (user_id, word_id))
+    if card is None:
+        card = known_card(user_id, word_id, "known", due_in_days=KNOWN_DUE_DAYS)
+        db.add(card)
+    elif card.state != int(ve.State.Review) or card.stability < 4.0:
+        card.state = int(ve.State.Review)
+        card.stability = max(card.stability, 4.0)
+        card.depth = max(card.depth, 1)
+        card.due = utcnow() + timedelta(days=KNOWN_DUE_DAYS)
+    db.commit()
+    return {"card": eb.card_summary(card, eb.now_days())}

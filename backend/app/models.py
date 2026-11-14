@@ -195,7 +195,35 @@ class CoachMessage(Base):
     content: Mapped[str] = mapped_column(Text)
     # A plan change the coach suggested with this reply (see coach.propose_plan).
     proposal: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Other things it offered to do (each confirmed with a button) or noted down.
+    actions: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CoachNote(Base):
+    """Something the coach keeps in mind about a student between chats (they can delete it)."""
+
+    __tablename__ = "coach_notes"
+    __table_args__ = (Index("ix_coach_notes_user_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64))
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AIUsage(Base):
+    """Claude requests and tokens per student per day (UTC), for the daily limit."""
+
+    __tablename__ = "ai_usage"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    requests: Mapped[int] = mapped_column(Integer, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Confusion(Base):

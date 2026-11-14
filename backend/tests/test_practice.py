@@ -268,19 +268,19 @@ def test_validation_catches_bad_new_items():
 
 def test_coach_sees_the_practice_question(client, db, monkeypatch):
     from app.services import ai
-    from tests.test_api import FakeClaude, _text
+    from tests.test_api import FakeClaude, _text, prompt
 
     h = headers("pr-coach")
     for kind in ("tc", "rc", "qc", "qne"):
         item = client.get(f"/api/practice/next?kind={kind}", headers=h).json()["item"]
         issued = db.get(IssuedItem, item["id"])
         fake = FakeClaude(_text("Think about it."), _text("Here's why."))
-        monkeypatch.setattr(ai.claude, "_create", fake)
+        monkeypatch.setattr(ai.claude, "_turn", fake)
         ask = {"message": "Give me a hint", "practice_item_id": item["id"]}
 
         res = client.post("/api/coach/chat", headers=h, json=ask).json()
         assert res["counted_as_hint"] is True
-        before = fake.calls[0]["system"]
+        before = prompt(fake.calls[0])
         assert "on the Practice page" in before and "HAS NOT ANSWERED YET" in before
         assert "Correct answer:" in before and issued.answer["explanation"] in before
         if kind == "rc":
@@ -292,15 +292,15 @@ def test_coach_sees_the_practice_question(client, db, monkeypatch):
                     json={"response": wrong_answer(issued), "response_ms": 5000})
         res = client.post("/api/coach/chat", headers=h, json=ask).json()
         assert res["counted_as_hint"] is False
-        after = fake.calls[1]["system"]
+        after = prompt(fake.calls[1])
         assert "has answered" in after and "(incorrect)" in after
 
 
 def test_coach_only_opens_your_own_practice_questions(client, monkeypatch):
     from app.services import ai
-    from tests.test_api import FakeClaude, _text
+    from tests.test_api import FakeClaude, _text, prompt
 
-    monkeypatch.setattr(ai.claude, "_create", FakeClaude(_text("hi")))
+    monkeypatch.setattr(ai.claude, "_turn", FakeClaude(_text("hi")))
     item = client.get("/api/practice/next?kind=qc", headers=headers("pr-owner")).json()["item"]
     ask = {"message": "hi", "practice_item_id": item["id"]}
     assert client.post("/api/coach/chat", headers=headers("pr-other"), json=ask).status_code == 404

@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     ai_enabled: bool = True
     claude_model: str = "claude-opus-5-5"
     claude_fallbacks: bool = True  # server-side refusal fallbacks
+    # Claude requests each student may make per day (UTC): coach messages,
+    # mnemonics and graded sentences. 0 turns the limit off.
+    ai_daily_limit: int = 60
 
     cors_origins: list[str] = ["http://localhost:5173"]
     default_daily_new_words: int = 10

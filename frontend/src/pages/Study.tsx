@@ -17,53 +17,8 @@ import { WordCard } from '../components/WordCard'
 import { YourSentence } from '../components/YourSentence'
 import { useCoachPage } from '../lib/coach'
 import { api, ApiError } from '../lib/api'
+import { FOCUSES, FORMATS, PREFS_EVENT, savedFocus, savedFormat, saveStudyPrefs } from '../lib/prefs'
 import type { AnswerResult, StudyFocus, StudyFormat, StudyItem, WordSet } from '../lib/types'
-
-const FORMATS: { format: StudyFormat; label: string }[] = [
-  { format: 'mixed', label: 'Mixed' },
-  { format: 'flashcard', label: 'Flashcards' },
-  { format: 'mcq', label: 'Multiple choice' },
-]
-const FORMAT_KEY = 'study-format'
-
-const FOCUSES: { focus: StudyFocus; label: string; title: string }[] = [
-  { focus: 'review', label: 'Less', title: 'Clear due reviews before new words' },
-  { focus: 'balanced', label: 'Balanced', title: 'About half new words, half reviews' },
-  { focus: 'new', label: 'More', title: "New words first, up to today's limit, then reviews" },
-]
-const FOCUS_KEY = 'study-focus'
-
-/** The last focus picked, remembered per browser like the format. */
-function savedFocus(): StudyFocus {
-  try {
-    const v = localStorage.getItem(FOCUS_KEY)
-    return FOCUSES.some((f) => f.focus === v) ? (v as StudyFocus) : 'review'
-  } catch {
-    return 'review'
-  }
-}
-
-/** The last format picked, remembered per browser (a convenience only). */
-function savedFormat(): StudyFormat {
-  try {
-    const v = localStorage.getItem(FORMAT_KEY)
-    return FORMATS.some((f) => f.format === v) ? (v as StudyFormat) : 'mixed'
-  } catch {
-    return 'mixed'
-  }
-}
-
-function saveFormat(format: StudyFormat) {
-  savePref(FORMAT_KEY, format)
-}
-
-function savePref(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    // storage blocked: the choice just won't be remembered
-  }
-}
 
 type Phase =
   | { kind: 'loading' }
@@ -79,6 +34,15 @@ export default function Study() {
   const [set, setSet] = useState<(WordSet & { total: number }) | null>(null)
   const [format, setFormat] = useState<StudyFormat>(savedFormat)
   const [focus, setFocus] = useState<StudyFocus>(savedFocus)
+  // The study coach can change these settings too.
+  useEffect(() => {
+    const sync = () => {
+      setFormat(savedFormat())
+      setFocus(savedFocus())
+    }
+    window.addEventListener(PREFS_EVENT, sync)
+    return () => window.removeEventListener(PREFS_EVENT, sync)
+  }, [])
   // The study coach (chat bubble) sees the question on screen.
   useCoachPage(
     phase.kind === 'question' || phase.kind === 'result'
@@ -154,7 +118,7 @@ export default function Study() {
           value={format}
           onValueChange={(v) => {
             setFormat(v as StudyFormat)
-            saveFormat(v as StudyFormat)
+            saveStudyPrefs({ format: v as StudyFormat })
           }}
           className="gap-1.5"
         >
@@ -173,7 +137,7 @@ export default function Study() {
           value={focus}
           onValueChange={(v) => {
             setFocus(v as StudyFocus)
-            savePref(FOCUS_KEY, v)
+            saveStudyPrefs({ focus: v as StudyFocus })
           }}
           className="gap-1.5"
         >

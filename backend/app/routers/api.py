@@ -1,18 +1,22 @@
+import json
+import logging
 from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth import current_user_id
 from app.config import get_settings
-from app.db import get_db
+from app.db import SessionLocal, get_db
 from app.models import Word
-from app.services import coach, placement, practice, sets, stats, study
+from app.services import coach, limits, placement, practice, sets, stats, study
 from app.services.ai import claude
 
 router = APIRouter(prefix="/api")
+log = logging.getLogger(__name__)
 
 
 # ---- config / profile ------------------------------------------------------
@@ -207,19 +211,80 @@ class CoachIn(BaseModel):
     word_id: int | None = None
 
 
-@router.post("/coach/chat")
-async def coach_chat(body: CoachIn, user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
-    """The study coach (chat bubble): progress, planning, GRE and vocabulary help."""
+def _coach_args(body: CoachIn) -> dict:
     if not body.message.strip():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Message is empty")
-    return await coach.chat(db, user_id, body.message.strip(), study_item_id=body.study_item_id,
-                            practice_item_id=body.practice_item_id, word_id=body.word_id)
+    return {"study_item_id": body.study_item_id, "practice_item_id": body.practice_item_id,
+            "word_id": body.word_id}
+
+
+@router.post("/coach/chat")
+async def coach_chat(body: CoachIn, user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
+    """The study coach (home page and chat bubble): progress, planning, GRE and vocabulary help."""
+    return await coach.chat(db, user_id, body.message.strip(), **_coach_args(body))
+
+
+@router.post("/coach/chat/stream")
+async def coach_chat_stream(body: CoachIn, user_id: str = Depends(current_user_id),
+                            db: Session = Depends(get_db)):
+    """The coach's reply as server-sent events, written out as it's generated (see coach.chat_events).
+
+    Problems found before the reply starts (no such question, daily limit, AI off) are
+    ordinary HTTP errors; one during the reply arrives as an {"type": "error"} event."""
+    page = _coach_args(body)
+    coach.check_page(db, user_id, **page)
+    limits.require(db, user_id)
+    if not claude.enabled:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "AI features are disabled on this server")
+
+    async def events():
+        # Its own session: the request's session may be closed before the stream ends.
+        with SessionLocal() as session:
+            try:
+                async for event in coach.chat_events(session, user_id, body.message.strip(), **page):
+                    yield f"data: {json.dumps(event)}\n\n"
+            except HTTPException as exc:
+                yield f"data: {json.dumps({'type': 'error', 'detail': exc.detail})}\n\n"
+            except Exception:
+                log.exception("Coach reply failed")
+                yield f"data: {json.dumps({'type': 'error', 'detail': 'Something went wrong'})}\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.get("/coach/history")
 def coach_history(user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
     """The student's saved chat with the coach, so it comes back after a refresh."""
-    return {"messages": coach.history(db, user_id)}
+    return {"messages": coach.history(db, user_id), "remaining": limits.remaining(db, user_id)}
+
+
+@router.get("/coach/notes")
+def coach_notes(user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
+    """What the coach keeps in mind about the student between chats."""
+    return {"notes": coach.notes(db, user_id)}
+
+
+@router.delete("/coach/notes/{note_id}")
+def coach_forget(note_id: int, user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
+    coach.delete_note(db, user_id, note_id)
+    return {"notes": coach.notes(db, user_id)}
+
+
+class ReviewNowIn(BaseModel):
+    word_ids: list[int] = Field(min_length=1, max_length=20)
+
+
+@router.post("/study/review-now")
+def review_now(body: ReviewNowIn, user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Bring started words back for review right away (offered by the coach)."""
+    return study.review_now(db, user_id, body.word_ids)
+
+
+@router.post("/words/{word_id}/known")
+def mark_known(word_id: int, user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
+    """The student already knows this word (offered by the coach)."""
+    return study.mark_known(db, user_id, word_id)
 
 
 @router.delete("/coach/history")
@@ -231,4 +296,6 @@ def coach_clear(user_id: str = Depends(current_user_id), db: Session = Depends(g
 
 @router.post("/words/{word_id}/mnemonic")
 async def mnemonic(word_id: int, user_id: str = Depends(current_user_id), db: Session = Depends(get_db)):
-    return {"mnemonic": await claude.mnemonic(_word_or_404(db, word_id))}
+    word = _word_or_404(db, word_id)
+    with limits.metered(db, user_id):
+        return {"mnemonic": await claude.mnemonic(word)}
