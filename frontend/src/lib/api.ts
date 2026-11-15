@@ -83,9 +83,33 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   return res
 }
 
+// Requests in progress, for the loading bar (components/Loading.tsx). The coach's
+// streamed replies aren't counted: the chat shows its own progress.
+let inFlight = 0
+const requestListeners = new Set<(count: number) => void>()
+
+/** Follow how many requests are in progress; returns a function that stops. */
+export function onRequests(listener: (count: number) => void): () => void {
+  requestListeners.add(listener)
+  listener(inFlight)
+  return () => {
+    requestListeners.delete(listener)
+  }
+}
+
+function countRequests(change: number) {
+  inFlight += change
+  requestListeners.forEach((listener) => listener(inFlight))
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await send(path, init)
-  return res.json() as Promise<T>
+  countRequests(1)
+  try {
+    const res = await send(path, init)
+    return (await res.json()) as T
+  } finally {
+    countRequests(-1)
+  }
 }
 
 /** A coach reply as it's written: calls `onEvent` for each server-sent event. */

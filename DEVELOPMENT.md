@@ -104,6 +104,8 @@ To give someone access, invite them in Clerk and add their email to `GRE_ALLOWED
 
 On Vercel the backend refuses to start unless Clerk sign-in and the approved-email list are configured, so a missing setting takes the app down instead of opening it up.
 
+**Speed.** Keep the backend's function region next to the database (Settings → Functions; `iad1` for a Supabase project in `us-east-1`), and keep Fluid compute on, so warm instances are reused. Each instance keeps a small pool of database connections (`app/db.py`), since opening one costs a ~100 ms handshake. A cold start runs the migrations check and the word and question bank sync, which take a few queries when nothing changed.
+
 ## CI (GitHub Actions)
 
 `.github/workflows/ci.yml` runs on pushes to `main` and `dev`, on pull requests, weekly, and on demand (Actions → CI → Run workflow). It needs no secrets: the tests use a throwaway Postgres container and run with AI turned off. The four jobs:

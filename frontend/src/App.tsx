@@ -1,6 +1,7 @@
 import { GraduationCap } from 'lucide-react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Coach, CoachChat } from '@/components/Coach'
+import { TopLoader } from '@/components/Loading'
 import { ErrorAlert } from '@/components/Status'
 import { cn } from '@/lib/utils'
 import { AccountButton, clerkEnabled } from './lib/auth'
@@ -42,6 +43,7 @@ export default function App() {
     <div
       className={cn('min-h-svh', config.ai_enabled && coach.open && !COACH_FREE.includes(pathname) && 'lg:pr-[416px]')}
     >
+      <TopLoader />
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
         {/* Phones: brand and account on one row, the nav scrolls on the row below. */}
         <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-4 px-4 sm:h-14">

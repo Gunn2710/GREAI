@@ -31,6 +31,7 @@ Groundwork
 - [ ] Model choice: Haiku for small jobs (daily brief, note-taking)
 - [ ] Log of coach actions, with undo
 - [ ] Behavior checks: saved conversations run against the fake Claude (no early answers, stays on topic, only changes things after you confirm)
+- [ ] Mount to MCP
 
 Actions, confirmed with a button
 - [x] Drill my mix-ups: a short session on the word pairs you keep confusing
