@@ -52,12 +52,10 @@ Every answer updates four signals for that word:
 | **Fluency** | How fast you answer, compared with your own usual speed |
 | **Calibration** | Whether your *Sure / Unsure / Guess* tap matches how you actually did |
 
-```mermaid
-flowchart LR
-    A[You answer] --> B[Comfort model updates<br/>memory, depth, fluency, calibration]
-    B --> C[Scheduler picks the next word<br/>and the right question style]
-    C --> A
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/learning-loop-dark.svg">
+  <img src="docs/learning-loop-light.svg" width="900" alt="The learning loop: you answer a flashcard or question and say how sure you were; the comfort model updates memory, depth, fluency and calibration for the word; the scheduler decides which word comes next and how to ask about it; this repeats with every answer.">
+</picture>
 
 ## Built with
 

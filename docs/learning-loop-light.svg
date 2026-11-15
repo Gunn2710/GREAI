@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 230" width="900" height="230" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+<title id="t">How GRE Prep learns you</title>
+<desc id="d">A loop: you answer, the comfort model updates memory, depth, fluency and calibration for the word, then the scheduler decides which word comes next and how to ask about it, and the loop repeats with every answer.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8c959f"/></marker>
+</defs>
+<rect x="15" y="20" width="240" height="108" rx="12" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
+<circle cx="41" cy="50" r="11" fill="#0969da"/>
+<text x="41" y="54.5" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">1</text>
+<text x="61" y="55" font-size="16" font-weight="600" fill="#1f2328">You answer</text>
+<text x="35" y="86" font-size="13.5" fill="#59636e">a flashcard or question,</text>
+<text x="35" y="106" font-size="13.5" fill="#59636e">and how sure you were</text>
+<line x1="263" y1="74.0" x2="322" y2="74.0" stroke="#8c959f" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="330" y="20" width="240" height="108" rx="12" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
+<circle cx="356" cy="50" r="11" fill="#0969da"/>
+<text x="356" y="54.5" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">2</text>
+<text x="376" y="55" font-size="16" font-weight="600" fill="#1f2328">Comfort model updates</text>
+<text x="350" y="86" font-size="13.5" fill="#59636e">memory, depth, fluency</text>
+<text x="350" y="106" font-size="13.5" fill="#59636e">and calibration for the word</text>
+<line x1="578" y1="74.0" x2="637" y2="74.0" stroke="#8c959f" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="645" y="20" width="240" height="108" rx="12" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
+<circle cx="671" cy="50" r="11" fill="#0969da"/>
+<text x="671" y="54.5" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">3</text>
+<text x="691" y="55" font-size="16" font-weight="600" fill="#1f2328">Scheduler decides</text>
+<text x="665" y="86" font-size="13.5" fill="#59636e">which word comes next</text>
+<text x="665" y="106" font-size="13.5" fill="#59636e">and how to ask about it</text>
+<path d="M765.0,136 V170 Q765.0,180 755.0,180 H145.0 Q135.0,180 135.0,170 V136" fill="none" stroke="#8c959f" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="450.0" y="202" text-anchor="middle" font-size="13" fill="#59636e">repeats with every answer</text>
+</svg>
