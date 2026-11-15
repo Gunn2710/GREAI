@@ -16,7 +16,7 @@ export type CoachMessage = SavedChatMessage & { pending?: boolean }
 interface CoachState {
   page: CoachPage
   setPage: (page: CoachPage) => void
-  /** Whether the chat bubble is open (pages other than Home). */
+  /** Whether the side chat is open (otherwise it's a bubble). Not used on the full-page chat. */
   open: boolean
   setOpen: (open: boolean) => void
   /** The chat, shared by the home page and the bubble. */
@@ -33,11 +33,25 @@ interface CoachState {
   send: (text: string) => Promise<boolean>
   /** Start a new chat. */
   clear: () => Promise<void>
-  /** Open the chat bubble and send `text`. */
+  /** Open the side chat and send `text`. */
   ask: (text: string) => void
 }
 
 const CoachContext = createContext<CoachState | null>(null)
+
+const OPEN_KEY = 'coach-open'
+const WIDE = '(min-width: 1024px)'
+
+/** Wide screens start with the side chat open, unless it was minimized last time;
+ * narrower screens (where it would cover the page) start with the bubble. */
+function startOpen(): boolean {
+  if (!window.matchMedia(WIDE).matches) return false
+  try {
+    return localStorage.getItem(OPEN_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
 
 function where(page: CoachPage) {
   if (page?.kind === 'study') return { study_item_id: page.itemId }
@@ -49,7 +63,15 @@ function where(page: CoachPage) {
 export function CoachProvider({ children }: { children: ReactNode }) {
   const { ai_enabled } = useConfig()
   const [page, setPage] = useState<CoachPage>(null)
-  const [open, setOpen] = useState(false)
+  const [open, setOpenState] = useState(startOpen)
+  const setOpen = useCallback((value: boolean) => {
+    setOpenState(value)
+    try {
+      localStorage.setItem(OPEN_KEY, value ? '1' : '0')
+    } catch {
+      // storage blocked: it just won't be remembered
+    }
+  }, [])
   const [messages, setMessages] = useState<CoachMessage[]>([])
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -131,10 +153,13 @@ export function CoachProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const ask = useCallback((text: string) => {
-    setOpen(true)
-    setQueued(text)
-  }, [])
+  const ask = useCallback(
+    (text: string) => {
+      setOpen(true)
+      setQueued(text)
+    },
+    [setOpen],
+  )
 
   // A page asked the coach something (e.g. a button on the word page): send it
   // once the saved chat is loaded, so the question carries on from it.
@@ -146,7 +171,7 @@ export function CoachProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({ page, setPage, open, setOpen, messages, loaded, busy, status, error, remaining, send, clear, ask }),
-    [page, open, messages, loaded, busy, status, error, remaining, send, clear, ask],
+    [page, open, setOpen, messages, loaded, busy, status, error, remaining, send, clear, ask],
   )
   return <CoachContext.Provider value={value}>{children}</CoachContext.Provider>
 }

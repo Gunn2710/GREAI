@@ -212,7 +212,7 @@ export default function Study() {
               </>
             ) : null}
             <Button asChild variant="ghost" className="mt-1">
-              <Link to="/dashboard">Back to dashboard</Link>
+              <Link to="/">Back to dashboard</Link>
             </Button>
           </CardContent>
         </Card>
