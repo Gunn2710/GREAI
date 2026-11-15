@@ -1,7 +1,7 @@
 /**
- * The study coach. On the home page it is the whole page (CoachChat); on every
- * other page it shrinks to a chat bubble in the corner that opens into a side
- * chat (Coach). Both show the same conversation (lib/coach.tsx). It knows the
+ * The study coach. It starts as a side chat (Coach) that minimizes into a
+ * bubble in the corner, and can go full screen on its own page (/chat,
+ * CoachChat). Both show the same conversation (lib/coach.tsx). It knows the
  * student's progress and what's on screen, and offers actions the student
  * confirms with a button.
  */
@@ -10,7 +10,9 @@ import {
   BookCheck,
   CalendarCheck,
   Check,
+  Maximize2,
   MessageCircle,
+  Minimize2,
   NotebookPen,
   PencilLine,
   Repeat,
@@ -22,12 +24,13 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { api, ApiError } from '../lib/api'
 import { useCoach, type CoachMessage, type CoachPage } from '../lib/coach'
+import { COACH_FREE } from '../lib/routes'
 import { useConfig } from '../lib/config'
 import { FOCUSES, FORMATS, saveStudyPrefs } from '../lib/prefs'
 import type { CoachAction, CoachNote, PlanProposal, Profile } from '../lib/types'
@@ -58,11 +61,13 @@ function pageLabel(page: CoachPage): string {
   return 'Looking at this question with you'
 }
 
-/** The chat bubble and side chat, on every page except Home (where the chat is the page). */
+/** The side chat, or the bubble it minimizes to, on every page except those in COACH_FREE. */
 export function Coach() {
   const { ai_enabled } = useConfig()
   const { open, setOpen } = useCoach()
-  const onHome = useLocation().pathname === '/'
+  const onHome = COACH_FREE.includes(useLocation().pathname)
+  // Take keyboard focus only when the student opens it, not when it starts open.
+  const [opened, setOpened] = useState(false)
 
   useEffect(() => {
     if (!open || onHome) return
@@ -77,7 +82,10 @@ export function Coach() {
     return (
       <Button
         className="fixed right-4 bottom-4 z-40 size-14 rounded-full shadow-lg [&_svg:not([class*='size-'])]:size-6"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpened(true)
+          setOpen(true)
+        }}
         aria-label="Open the study coach"
         title="Study coach"
       >
@@ -94,7 +102,7 @@ export function Coach() {
         aria-label="Study coach"
         className="fixed inset-x-0 bottom-0 z-50 flex h-[85svh] flex-col rounded-t-2xl border bg-background shadow-xl sm:inset-x-auto sm:right-4 sm:bottom-4 sm:h-[min(640px,calc(100svh-2rem))] sm:w-[400px] sm:rounded-2xl"
       >
-        <CoachChat variant="panel" />
+        <CoachChat variant="panel" autoFocus={opened} />
       </section>
     </>
   )
@@ -102,11 +110,13 @@ export function Coach() {
 
 /**
  * The conversation: messages, suggested questions, offered actions and the
- * message box. `page` fills the home page (the message box sticks to the
+ * message box. `page` fills the chat page (the message box sticks to the
  * bottom of the window); `panel` fills the side chat.
  */
-export function CoachChat({ variant }: { variant: 'page' | 'panel' }) {
+export function CoachChat({ variant, autoFocus = true }: { variant: 'page' | 'panel'; autoFocus?: boolean }) {
   const { page, setOpen, messages, loaded, busy, status, error, remaining, send, clear } = useCoach()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [draft, setDraft] = useState('')
   const [showNotes, setShowNotes] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
@@ -124,14 +134,14 @@ export function CoachChat({ variant }: { variant: 'page' | 'panel' }) {
   }, [isPage])
 
   useEffect(() => {
-    // On the home page the window scrolls (past the message box stuck to the bottom).
+    // On the chat page the window scrolls (past the message box stuck to the bottom).
     if (isPage) window.scrollTo({ top: document.documentElement.scrollHeight })
     else endRef.current?.scrollIntoView({ block: 'end' })
   }, [messages, status, isPage])
 
   useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
+    if (autoFocus) inputRef.current?.focus()
+  }, [autoFocus])
 
   async function submit(text: string) {
     if (!text.trim() || busy) return
@@ -202,10 +212,42 @@ export function CoachChat({ variant }: { variant: 'page' | 'panel' }) {
             <RotateCcw />
           </Button>
         )}
-        {!isPage && (
-          <Button variant="ghost" size="icon-sm" onClick={() => setOpen(false)} aria-label="Close the study coach">
-            <X />
+        {isPage ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => {
+              // Back to the page it was opened from, with the side chat open.
+              setOpen(true)
+              navigate((location.state as { from?: string } | null)?.from ?? '/')
+            }}
+            aria-label="Exit full screen"
+            title="Exit full screen"
+          >
+            <Minimize2 />
           </Button>
+        ) : (
+          <>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="hidden sm:inline-flex"
+              onClick={() => navigate('/chat', { state: { from: location.pathname + location.search } })}
+              aria-label="Full screen"
+              title="Full screen"
+            >
+              <Maximize2 />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setOpen(false)}
+              aria-label="Minimize the study coach"
+              title="Minimize"
+            >
+              <X />
+            </Button>
+          </>
         )}
       </header>
 

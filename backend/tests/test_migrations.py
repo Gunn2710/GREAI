@@ -106,10 +106,9 @@ def test_direct_host_is_fine_off_vercel(monkeypatch):
     assert Secrets(_env_file=None, GRE_DATABASE_URL=DIRECT).database_url.get_secret_value() == DIRECT
 
 
-def test_vercel_engine_keeps_no_idle_connections(monkeypatch):
-    from sqlalchemy.pool import NullPool
-
+def test_vercel_engine_reuses_a_few_connections(monkeypatch):
+    # Opening a connection to the pooler costs ~100 ms, so a warm instance reuses
+    # a few; recycling and pre-ping replace ones that died while it was frozen.
     monkeypatch.setenv("VERCEL", "1")
-    assert isinstance(make_engine(POOLER).pool, NullPool)
-    monkeypatch.delenv("VERCEL")
-    assert not isinstance(make_engine(POOLER).pool, NullPool)
+    pool = make_engine(POOLER).pool
+    assert (pool.size(), pool._max_overflow, pool._recycle, pool._pre_ping) == (2, 3, 240, True)

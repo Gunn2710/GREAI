@@ -20,6 +20,7 @@
 - [x] Simplify backend tests
 - [x] New/Old word leaning
 - [ ] Add RBAC/user tiers and change Clerk restrictions
+- [ ] Add Loading screen
 
 ## Agent
 
@@ -30,6 +31,7 @@ Groundwork
 - [ ] Model choice: Haiku for small jobs (daily brief, note-taking)
 - [ ] Log of coach actions, with undo
 - [ ] Behavior checks: saved conversations run against the fake Claude (no early answers, stays on topic, only changes things after you confirm)
+- [ ] Mount to MCP
 
 Actions, confirmed with a button
 - [x] Drill my mix-ups: a short session on the word pairs you keep confusing

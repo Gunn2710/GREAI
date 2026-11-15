@@ -163,7 +163,7 @@ export function PlacementSummary({ result }: { result: PlacementResult }) {
 
         <div className="flex justify-end gap-2">
           <Button variant="outline" asChild>
-            <Link to="/dashboard">Dashboard</Link>
+            <Link to="/">Dashboard</Link>
           </Button>
           <Button asChild>
             <Link to="/study">Start studying</Link>

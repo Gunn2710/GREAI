@@ -210,11 +210,13 @@ def assign_sets(words: list[dict], groups: list[list[str]] = ()) -> dict[str, tu
     return out
 
 
-def _upsert_skill(db: Session, sid: str, section: str, parent: str | None, name: str) -> None:
-    skill = db.get(Skill, sid)
+def _upsert_skill(db: Session, skills: dict[str, Skill], sid: str, section: str, parent: str | None,
+                  name: str) -> None:
+    skill = skills.get(sid)
     if skill is None:
-        db.add(Skill(id=sid, section=section, parent_id=parent, name=name))
-    else:
+        skills[sid] = skill = Skill(id=sid, section=section, parent_id=parent, name=name)
+        db.add(skill)
+    elif (skill.parent_id, skill.name) != (parent, name):
         skill.parent_id, skill.name = parent, name
 
 
@@ -224,15 +226,19 @@ def sync_bank(db: Session, directory: Path = VOCAB_DIR) -> dict:
     if problems:
         raise ValueError("Vocabulary bank failed validation:\n  " + "\n  ".join(problems))
 
+    # Every server start runs this, so it reads everything up front and writes
+    # only what changed: a handful of queries when nothing did. (Looking skills
+    # up one by one was ~640 round trips to the database on every cold start.)
+    skills = {s.id: s for s in db.scalars(select(Skill))}
     for sid, section, parent, name in ROOT_SKILLS:
-        _upsert_skill(db, sid, section, parent, name)
-    db.flush()
+        _upsert_skill(db, skills, sid, section, parent, name)
+    db.flush()  # parents before children (parent_id is a foreign key)
     for key, name in meta["families"].items():
-        _upsert_skill(db, f"{FAMILY_PREFIX}{key}", "verbal", VOCAB_ROOT, name)
+        _upsert_skill(db, skills, f"{FAMILY_PREFIX}{key}", "verbal", VOCAB_ROOT, name)
     db.flush()
     for key, c in meta["clusters"].items():
         parent = f"{FAMILY_PREFIX}{c['family']}" if c.get("family") else VOCAB_ROOT
-        _upsert_skill(db, f"{VOCAB_ROOT}.{key}", "verbal", parent, c["label"])
+        _upsert_skill(db, skills, f"{VOCAB_ROOT}.{key}", "verbal", parent, c["label"])
     db.flush()
 
     existing = {w.lemma: w for w in db.scalars(select(Word))}

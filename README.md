@@ -31,7 +31,7 @@ A 20-question adaptive test estimates your vocabulary level, so words you alread
 Original GRE-style questions in all six formats: Text Completion, Sentence Equivalence, Reading Comprehension, Quantitative Comparison, multiple choice, and numeric entry. Questions are matched to a rating for each type that rises and falls with your answers, and every question has a hint and a full explanation.
 
 ### Study coach
-The home page is a chat with your coach, powered by Claude; on every other page it's a chat bubble. Ask *"What is my current vocabulary progress?"*, *"Which section should I work on?"*, or *"Help me set a target."* It knows your progress and can set things up for you: a drill on words you mix up, a new pace or test date, your study settings, or your own sentence for a word. Nothing changes until you click to confirm. It remembers your goals between chats in notes you can see and delete. On a question it coaches without giving the answer away until you've answered.
+Powered by Claude. The coach sits in a side chat next to every page: minimize it to a bubble in the corner, or open it full screen. Ask *"What is my current vocabulary progress?"*, *"Which section should I work on?"*, or *"Help me set a target."* It knows your progress and can set things up for you: a drill on words you mix up, a new pace or test date, your study settings, or your own sentence for a word. Nothing changes until you click to confirm. It remembers your goals between chats in notes you can see and delete. On a question it coaches without giving the answer away until you've answered.
 
 ### Make words stick
 - **Your sentence.** Write your own sentence with a word. It appears whenever the word's meaning is revealed.
@@ -39,7 +39,7 @@ The home page is a chat with your coach, powered by Claude; on every other page 
 - **Pronunciation.** Every word has a stress-marked respelling (luh-**kah**-nik) and a speaker button to hear it.
 
 ### Dashboard
-Comfort tiers, depth of knowledge, a 7-day review forecast, your streak, accuracy, and the words that need the most work.
+The home page: what's ready to study today, comfort tiers, depth of knowledge, a 7-day review forecast, your streak, accuracy, and the words that need the most work.
 
 ## How it learns you
 

@@ -261,7 +261,19 @@ def test_phrases_must_use_the_word():
 
 
 def test_sync_is_idempotent_and_updates(client, db):
-    assert sync_bank(db) == {"added": 0, "updated": 0, "total": len(BANK_WORDS)}
+    from sqlalchemy import event
+
+    from app.db import engine
+
+    # It runs on every server start: with nothing to change it must stay a few queries.
+    queries = []
+    count = lambda *args, **kwargs: queries.append(1)  # noqa: E731
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        assert sync_bank(db) == {"added": 0, "updated": 0, "total": len(BANK_WORDS)}
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+    assert len(queries) <= 5, len(queries)
     word = db.scalar(select(Word).where(Word.lemma == "laud"))
     word.tier = 3
     db.commit()

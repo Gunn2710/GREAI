@@ -1,13 +1,14 @@
 import { GraduationCap } from 'lucide-react'
-import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Coach, CoachChat } from '@/components/Coach'
+import { TopLoader } from '@/components/Loading'
 import { ErrorAlert } from '@/components/Status'
 import { cn } from '@/lib/utils'
 import { AccountButton, clerkEnabled } from './lib/auth'
 import { useCoach } from './lib/coach'
 import { useConfig } from './lib/config'
+import { COACH_FREE } from './lib/routes'
 import Dashboard from './pages/Dashboard'
-import Home from './pages/Home'
 import Placement from './pages/Placement'
 import Practice from './pages/Practice'
 import Settings from './pages/Settings'
@@ -16,8 +17,7 @@ import WordPage from './pages/WordPage'
 import Words from './pages/Words'
 
 const NAV = [
-  { to: '/', label: 'Home', end: true },
-  { to: '/dashboard', label: 'Dashboard' },
+  { to: '/', label: 'Dashboard', end: true },
   { to: '/study', label: 'Vocab' },
   { to: '/practice', label: 'Practice' },
   { to: '/words', label: 'Words' },
@@ -27,9 +27,9 @@ const NAV = [
 export default function App() {
   const config = useConfig()
   const coach = useCoach()
-  // Home is the study coach's chat; other pages have it as a bubble.
-  const onHome = useLocation().pathname === '/'
-  const chatHome = config.ai_enabled && onHome
+  // The study coach is a side chat (or its bubble) on every page, and can go full screen at /chat.
+  const { pathname } = useLocation()
+  const onChat = config.ai_enabled && pathname === '/chat'
   // The two halves must agree on auth, or every request fails with 401.
   const mismatch =
     config.loaded && (config.auth_mode === 'clerk') !== clerkEnabled
@@ -40,7 +40,10 @@ export default function App() {
 
   return (
     // On wide screens the open coach sits beside the page instead of over it.
-    <div className={cn('min-h-svh', config.ai_enabled && coach.open && !onHome && 'lg:pr-[416px]')}>
+    <div
+      className={cn('min-h-svh', config.ai_enabled && coach.open && !COACH_FREE.includes(pathname) && 'lg:pr-[416px]')}
+    >
+      <TopLoader />
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
         {/* Phones: brand and account on one row, the nav scrolls on the row below. */}
         <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-4 px-4 sm:h-14">
@@ -70,12 +73,16 @@ export default function App() {
           </div>
         </div>
       </header>
-      <main className={cn('mx-auto flex max-w-4xl flex-col gap-4 px-4 pt-6', chatHome ? 'pb-0' : 'pb-24')}>
+      <main className={cn('mx-auto flex max-w-4xl flex-col gap-4 px-4 pt-6', onChat ? 'pb-0' : 'pb-24')}>
         {mismatch && <ErrorAlert>{mismatch}</ErrorAlert>}
         <Routes>
-          {/* Without AI, Home lists the sections instead. */}
-          <Route path="/" element={config.ai_enabled ? <CoachChat variant="page" /> : <Home />} />
-          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/dashboard" element={<Navigate to="/" replace />} />
+          {/* The study coach full screen (from the side chat's full-screen button). */}
+          <Route
+            path="/chat"
+            element={config.ai_enabled ? <CoachChat variant="page" /> : config.loaded && <Navigate to="/" replace />}
+          />
           <Route path="/study" element={<Study />} />
           <Route path="/placement" element={<Placement />} />
           <Route path="/practice" element={<Practice />} />

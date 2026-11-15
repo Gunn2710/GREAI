@@ -7,8 +7,8 @@ import inspect
 import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import TYPE_CHECKING
 
-import anthropic
 from fastapi import HTTPException, status
 
 from app.config import get_settings
@@ -17,6 +17,17 @@ from app.models import Word
 from app.services.limits import current_meter
 
 log = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import anthropic
+
+
+def _sdk():
+    """The Anthropic SDK, imported on first use: it takes ~0.4s to import, which
+    would otherwise slow every server start (a cold start on Vercel)."""
+    import anthropic
+
+    return anthropic
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
@@ -68,18 +79,19 @@ class AIUnavailable(HTTPException):
 class ClaudeService:
     def __init__(self) -> None:
         self.settings = get_settings()
-        self._client: anthropic.AsyncAnthropic | None = None
+        self._client: "anthropic.AsyncAnthropic | None" = None
 
     @property
     def enabled(self) -> bool:
         return self.settings.ai_enabled
 
     @property
-    def client(self) -> anthropic.AsyncAnthropic:
+    def client(self) -> "anthropic.AsyncAnthropic":
         if self._client is None:
             key = get_secrets().anthropic_api_key
             # No key here: the SDK falls back to the environment or an `ant auth login` profile.
-            self._client = anthropic.AsyncAnthropic(api_key=key.get_secret_value()) if key else anthropic.AsyncAnthropic()
+            sdk = _sdk()
+            self._client = sdk.AsyncAnthropic(api_key=key.get_secret_value()) if key else sdk.AsyncAnthropic()
         return self._client
 
     def _ready(self, params: dict) -> dict:
@@ -91,8 +103,9 @@ class ClaudeService:
         return params
 
     @staticmethod
-    def _failure(exc: anthropic.APIError) -> AIUnavailable:
+    def _failure(exc: "anthropic.APIError") -> AIUnavailable:
         """What the student sees when the API call fails."""
+        anthropic = _sdk()
         if isinstance(exc, anthropic.AuthenticationError):
             return AIUnavailable("Claude API credentials are missing or invalid")
         if isinstance(exc, anthropic.RateLimitError):
@@ -118,6 +131,7 @@ class ClaudeService:
     async def _create(self, **params) -> object:
         """One Messages API call, with the server's model, effort and fallbacks."""
         params = self._ready(params)
+        anthropic = _sdk()
         try:
             return await self.client.beta.messages.create(model=self.settings.claude_model, **params)
         except anthropic.APIError as exc:
@@ -127,6 +141,7 @@ class ClaudeService:
         """One streamed Messages API call: yields ("text", delta) as the reply is written, then
         ("message", the final message)."""
         params = self._ready(params)
+        anthropic = _sdk()
         try:
             async with self.client.beta.messages.stream(model=self.settings.claude_model, **params) as stream:
                 async for text in stream.text_stream:

@@ -104,6 +104,8 @@ To give someone access, invite them in Clerk and add their email to `GRE_ALLOWED
 
 On Vercel the backend refuses to start unless Clerk sign-in and the approved-email list are configured, so a missing setting takes the app down instead of opening it up.
 
+**Speed.** Keep the backend's function region next to the database (Settings → Functions; `iad1` for a Supabase project in `us-east-1`), and keep Fluid compute on, so warm instances are reused. Each instance keeps a small pool of database connections (`app/db.py`), since opening one costs a ~100 ms handshake. A cold start runs the migrations check and the word and question bank sync, which take a few queries when nothing changed.
+
 ## CI (GitHub Actions)
 
 `.github/workflows/ci.yml` runs on pushes to `main` and `dev`, on pull requests, weekly, and on demand (Actions → CI → Run workflow). It needs no secrets: the tests use a throwaway Postgres container and run with AI turned off. The four jobs:
@@ -202,7 +204,7 @@ Students can save their own sentence with any word (`word_sentences` table, `PUT
 
 ### AI features (Claude)
 
-- **Study coach** (`app/services/coach.py`, `src/components/Coach.tsx`, `src/lib/coach.tsx`). The home page is the coach's chat; every other page has it as a chat bubble. Both show the same conversation, which is saved per account (`coach_messages`) so it survives a refresh.
+- **Study coach** (`app/services/coach.py`, `src/components/Coach.tsx`, `src/lib/coach.tsx`). It's a side chat next to every page. Its X minimizes it to a bubble in the corner, and its full-screen button opens the chat on its own page (`/chat`), which has a button back to where you were. Wide screens (1024px and up) start with the side chat open unless it was minimized last time (remembered per browser); narrower screens start with the bubble, since the chat would cover the page. Both views show the same conversation, which is saved per account (`coach_messages`) so it survives a refresh.
   - **Context.** Every message comes with a snapshot of the student's progress: plan, vocab sets and comfort tiers, practice ratings, and placement level. Tools let it look further: set-by-set progress, weak words and confused pairs, recent activity, word entries, and a student's history with one word.
   - **What's on screen.** Pages tell the coach what they show (`useCoachPage`): the Vocab or Practice question, or the word page. On a question it won't give the answer away before the student answers, and asking counts as a hint.
   - **Actions, confirmed with a button.** The coach only offers; nothing changes until the student clicks. It can offer plan changes (`propose_plan`), bring started words back for review now (`review_now`, `POST /api/study/review-now`), mark a word as known (`mark_known`, `POST /api/words/{id}/known`), change the Vocab study settings (`propose_study_settings`, saved in the browser), save the student's sentence (`save_sentence`), and link to a Practice type (`open_practice`). Offers are saved with the reply (`coach_messages.actions`).

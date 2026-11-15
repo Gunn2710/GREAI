@@ -1,10 +1,11 @@
 import { ArrowRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ErrorAlert, LoadingCard } from '@/components/Status'
+import { ErrorAlert } from '@/components/Status'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import { Skeleton } from '@/components/ui/skeleton'
 import { ComfortMeter, DEPTH_LABEL, FREQUENCY_LABEL, TIER_FILL, TIER_LABEL, TierBadge } from '../components/Comfort'
 import { SetProgress } from '../components/Sets'
 import { api, ApiError } from '../lib/api'
@@ -24,7 +25,7 @@ export default function Dashboard() {
   }, [])
 
   if (error) return <ErrorAlert>{error}. Is the backend running on :8000?</ErrorAlert>
-  if (!stats) return <LoadingCard />
+  if (!stats) return <DashboardSkeleton />
 
   const todo = stats.due_now + stats.new_available_today
   const maxForecast = Math.max(1, ...stats.forecast.map((f) => f.due))
@@ -205,5 +206,46 @@ function Tile({ label, value }: { label: string; value: string | number }) {
       <div className="text-2xl font-semibold tracking-tight tabular-nums">{value}</div>
       <div className="text-xs text-muted-foreground">{label}</div>
     </Card>
+  )
+}
+
+/** The dashboard's shape while its numbers load, so nothing jumps when they arrive. */
+function DashboardSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading your dashboard">
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-7 w-44" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-10 w-40" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="flex flex-col gap-3">
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-2 w-full" />
+          <Skeleton className="h-4 w-48" />
+        </CardContent>
+      </Card>
+      <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
+        {Array.from({ length: 5 }, (_, i) => (
+          <Card key={i}>
+            <CardContent className="flex flex-col gap-2">
+              <Skeleton className="h-7 w-14" />
+              <Skeleton className="h-3 w-20" />
+            </CardContent>
+          </Card>
+        ))}
+      </section>
+      <Card>
+        <CardContent className="flex flex-col gap-3">
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+        </CardContent>
+      </Card>
+    </div>
   )
 }

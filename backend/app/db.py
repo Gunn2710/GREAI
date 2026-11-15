@@ -4,7 +4,6 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import Engine
-from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.secrets_config import get_secrets
@@ -31,10 +30,13 @@ def make_engine(url: str) -> Engine:
     # across transactions; turning them off is harmless elsewhere.
     options: dict = {"connect_args": {"prepare_threshold": None}, "pool_pre_ping": True}
     if os.environ.get("VERCEL"):
-        # Serverless instances are many, short-lived and frozen between requests:
-        # an idle pool in each one would only use up the pooler's connection
-        # limit. Supabase's pooler does the pooling instead.
-        options["poolclass"] = NullPool
+        # A new connection to Supabase's pooler costs a TLS and auth handshake
+        # (~100 ms) before the first query, so each instance keeps a couple open
+        # and reuses them across requests (Vercel reuses warm instances). The
+        # pool stays small so many instances don't use up the pooler's client
+        # limit, and connections are replaced every few minutes; pre-ping
+        # replaces any that died while the instance was frozen.
+        options |= {"pool_size": 2, "max_overflow": 3, "pool_recycle": 240, "pool_timeout": 10}
     return create_engine(normalize_url(url), **options)
 
 

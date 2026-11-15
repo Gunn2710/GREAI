@@ -1,7 +1,7 @@
 import { SignIn, SignOutButton, UserButton, useAuth, useUser } from '@clerk/react'
 import { GraduationCap } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
-import { LoadingCard } from '@/components/Status'
+import { AppLoading } from '@/components/Loading'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { api, ApiError, setTokenProvider } from './api'
@@ -43,11 +43,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [isSignedIn, userId])
 
   if (!isLoaded || (isSignedIn && (access.userId !== userId || access.state === 'checking'))) {
-    return (
-      <div className="mx-auto max-w-4xl px-4 py-6">
-        <LoadingCard />
-      </div>
-    )
+    return <AppLoading />
   }
   if (!isSignedIn) {
     return (
