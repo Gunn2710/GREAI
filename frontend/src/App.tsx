@@ -5,9 +5,7 @@ import { TopLoader } from '@/components/Loading'
 import { ErrorAlert } from '@/components/Status'
 import { cn } from '@/lib/utils'
 import { AccountButton, clerkEnabled } from './lib/auth'
-import { useCoach } from './lib/coach'
 import { useConfig } from './lib/config'
-import { COACH_FREE } from './lib/routes'
 import Dashboard from './pages/Dashboard'
 import Placement from './pages/Placement'
 import Practice from './pages/Practice'
@@ -26,7 +24,6 @@ const NAV = [
 
 export default function App() {
   const config = useConfig()
-  const coach = useCoach()
   // The study coach is a side chat (or its bubble) on every page, and can go full screen at /chat.
   const { pathname } = useLocation()
   const onChat = config.ai_enabled && pathname === '/chat'
@@ -39,10 +36,8 @@ export default function App() {
       : null
 
   return (
-    // On wide screens the open coach sits beside the page instead of over it.
-    <div
-      className={cn('min-h-svh', config.ai_enabled && coach.open && !COACH_FREE.includes(pathname) && 'lg:pr-[416px]')}
-    >
+    // The side chat floats over the page (it doesn't push it aside).
+    <div className="min-h-svh">
       <TopLoader />
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
         {/* Phones: brand and account on one row, the nav scrolls on the row below. */}
