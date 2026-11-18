@@ -23,6 +23,7 @@ Flashcard apps track whether you got a word right. GRE Prep also tracks *how* yo
 - **Five question styles** that get harder as you improve: flashcard, pick the definition, complete the sentence, pick the two synonyms, and write your own sentence (graded by AI).
 - **Smart scheduling.** Reviews come back right before you'd forget, using the FSRS-5 memory model. Words you keep mixing up come back as each other's wrong answers.
 - **A comfort score for every word**, from *Learning* through *Shaky* and *Comfortable* to *Mastered*.
+- **Printable word lists.** Download any set as a PDF, with each word on the left and its meaning on the right, on one or two pages.
 
 ### Placement check
 A 20-question adaptive test estimates your vocabulary level, so words you already know skip the basics and you don't spend days on them.

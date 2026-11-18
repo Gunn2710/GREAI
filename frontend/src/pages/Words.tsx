@@ -1,4 +1,4 @@
-import { Search, X } from 'lucide-react'
+import { Download, Loader2, Search, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ComfortMeter, DEPTH_LABEL, FREQUENCY_LABEL, FrequencyBadge, TierBadge, formatDue } from '../components/Comfort'
 import { SetTile } from '../components/Sets'
 import { api } from '../lib/api'
+import { downloadWordList } from '../lib/wordPdf'
 import type { SetsResponse, WordListEntry, WordSet } from '../lib/types'
 
 export default function Words() {
@@ -17,6 +18,8 @@ export default function Words() {
   const [search, setSearch] = useState('')
   const [words, setWords] = useState<WordListEntry[] | null>(null)
   const [sets, setSets] = useState<SetsResponse | null>(null)
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
 
   useEffect(() => {
     api.sets().then(setSets).catch(() => setSets(null))
@@ -36,6 +39,21 @@ export default function Words() {
     setParams(opening ? { set: String(n) } : {}, { replace: true })
     // The list sits below the set tiles; bring the chosen set's words into view.
     if (opening) requestAnimationFrame(() => document.getElementById('word-list')?.scrollIntoView({ behavior: 'smooth' }))
+  }
+
+  const download = async (set: WordSet) => {
+    setDownloading(true)
+    setDownloadError(null)
+    try {
+      // The list may be narrowed by a search; the PDF always has the whole set.
+      const all = search.trim() || !words ? await api.words() : words
+      const inSet = all.filter((w) => w.set === set.number)
+      await downloadWordList(`Set ${set.number}`, `${setLabel(set)} · ${inSet.length} words`, inSet)
+    } catch {
+      setDownloadError('Could not make the PDF. Try again.')
+    } finally {
+      setDownloading(false)
+    }
   }
 
   // Phones show only the word and comfort; extra columns appear as the screen widens.
@@ -70,11 +88,16 @@ export default function Words() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {selectedSet && (
-            <div>
+            <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => select(null)}>
                 <X />
                 Show all words
               </Button>
+              <Button variant="outline" size="sm" disabled={downloading} onClick={() => download(selectedSet)}>
+                {downloading ? <Loader2 className="animate-spin" /> : <Download />}
+                Download PDF
+              </Button>
+              {downloadError && <span className="text-sm text-destructive">{downloadError}</span>}
             </div>
           )}
           {!words ? (

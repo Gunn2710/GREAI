@@ -20,7 +20,8 @@
 - [x] Simplify backend tests
 - [x] New/Old word leaning
 - [ ] Add RBAC/user tiers and change Clerk restrictions
-- [ ] Add Loading screen
+- [x] Add Loading screen
+- [x] Pdf download for words
 
 ## Agent
 
