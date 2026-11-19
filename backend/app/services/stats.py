@@ -1,4 +1,4 @@
-"""Dashboard numbers: comfort tiers, depth ladder, due forecast, accuracy, streak."""
+"""Dashboard numbers: comfort tiers, depth ladder, due forecast, accuracy, streak, check-ins."""
 from collections import Counter
 from datetime import timedelta
 
@@ -34,6 +34,31 @@ def _streak_days(db: Session, user_id: str) -> int:
         streak += 1
         day -= timedelta(days=1)
     return streak
+
+
+ACTIVITY_DAYS = 126  # 18 weeks, about four months
+
+
+def _activity(db: Session, user_id: str) -> dict:
+    """Words studied on each day (UTC, like the streak), for the check-in grid. Only
+    days with studying are listed."""
+    today = utcnow().date()
+    day = func.date(func.timezone("UTC", Attempt.created_at))
+    rows = db.execute(
+        select(day, func.count(func.distinct(Attempt.word_id)))
+        .where(
+            Attempt.user_id == user_id,
+            Attempt.item_type.in_(VOCAB_TYPES),
+            Attempt.word_id.is_not(None),
+            Attempt.created_at >= start_of_today() - timedelta(days=ACTIVITY_DAYS - 1),
+        )
+        .group_by(day)
+        .order_by(day)
+    )
+    return {
+        "today": today.isoformat(),
+        "days": [{"date": d.isoformat(), "words": n} for d, n in rows],
+    }
 
 
 def dashboard(db: Session, user_id: str) -> dict:
@@ -97,6 +122,7 @@ def dashboard(db: Session, user_id: str) -> dict:
         "accuracy_30d": accuracy,
         "streak_days": _streak_days(db, user_id),
         "forecast": forecast,
+        "activity": _activity(db, user_id),
         "weakest": [
             {"word": word_detail(db.get(Word, c.word_id)), "card": s} for c, s in weakest
         ],
