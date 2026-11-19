@@ -140,6 +140,8 @@ export interface Stats {
   accuracy_30d: number | null
   streak_days: number
   forecast: { date: string; due: number }[]
+  /** Words studied per day (UTC) over the last 18 weeks; only days with studying are listed. */
+  activity: { today: string; days: { date: string; words: number }[] }
   weakest: { word: WordDetail; card: CardSummary }[]
 }
 

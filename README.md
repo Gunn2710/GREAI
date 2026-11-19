@@ -40,7 +40,7 @@ Powered by Claude. The coach sits in a side chat next to every page: minimize it
 - **Pronunciation.** Every word has a stress-marked respelling (luh-**kah**-nik) and a speaker button to hear it.
 
 ### Dashboard
-The home page: what's ready to study today, comfort tiers, depth of knowledge, a 7-day review forecast, your streak, accuracy, and the words that need the most work.
+The home page: what's ready to study today, four months of daily check-ins (one square per day, a deeper purple the more words you studied), comfort tiers, depth of knowledge, a 7-day review forecast, your streak, accuracy, and the words that need the most work.
 
 ## How it learns you
 

@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.items.base import get_item_type
 from app.items.vocab import related
-from app.models import Card, Confusion, IssuedItem, Word, utcnow
+from app.models import Attempt, Card, Confusion, IssuedItem, Word, utcnow
 from app.seed.seed import TOP_SOURCE, assign_sets, load_bank, load_groups, sync_bank, validate_bank
 from app.services import ai
 
@@ -139,6 +139,31 @@ def test_daily_new_word_limit(client, db):
     assert stats["new_available_today"] == 0
     assert stats["tiers"]["learning"] == 3
     assert stats["reviews_today"] == 3
+
+
+def test_check_ins_count_words_studied_each_day(client, db):
+    words = db.scalars(select(Word.id).order_by(Word.id).limit(3)).all()
+    now = utcnow()
+
+    def attempt(user, word_id, days_ago, item_type="flashcard", section="vocab"):
+        db.add(Attempt(user_id=user, item_id="x", section=section, item_type=item_type, word_id=word_id,
+                       correct=True, created_at=now - timedelta(days=days_ago)))
+
+    attempt("cara", words[0], 0)
+    attempt("cara", words[0], 0)  # the same word twice is one word
+    attempt("cara", words[1], 0, item_type="cloze")
+    attempt("cara", words[2], 3)
+    attempt("cara", None, 0, item_type="tc", section="verbal")  # practice isn't vocab
+    attempt("cara", words[0], 400)  # older than the grid
+    attempt("dev", words[1], 1)  # someone else
+    db.commit()
+
+    activity = client.get("/api/stats", headers=headers("cara")).json()["activity"]
+    assert activity["today"] == now.date().isoformat()
+    assert activity["days"] == [
+        {"date": (now - timedelta(days=3)).date().isoformat(), "words": 1},
+        {"date": now.date().isoformat(), "words": 2},
+    ]
 
 
 def _make_review_card(db, user: str, lemma: str, depth: int) -> Card:
