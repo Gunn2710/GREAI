@@ -13,7 +13,7 @@
 - [ ] Mock test mode
 - [x] Quant section
 - [ ] Writing section
-- [ ] Streaks and reminders
+- [ ] Daily reminders
 - [ ] Make it phone screen compatible
 - [x] Add simple github action CI to check for secret safety
 - [x] Per user Chat history after refresh
@@ -22,6 +22,7 @@
 - [ ] Add RBAC/user tiers and change Clerk restrictions
 - [x] Add Loading screen
 - [x] Pdf download for words
+- [x] Streaks overview like github
 
 ## Agent
 
