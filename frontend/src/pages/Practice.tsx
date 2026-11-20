@@ -1,4 +1,4 @@
-import { ArrowRight, Lightbulb, Sparkles, Square, SquareCheck } from 'lucide-react'
+import { ArrowRight, Lightbulb, MessageCircle, Sparkles, Square, SquareCheck } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { OptionButton, OptionResult, Verdict } from '@/components/Option'
@@ -12,7 +12,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { api, ApiError } from '../lib/api'
-import { useCoachPage } from '../lib/coach'
+import { useCoach, useCoachPage } from '../lib/coach'
+import { useConfig } from '../lib/config'
 import type {
   PracticeItem,
   PracticeKind,
@@ -379,6 +380,11 @@ function Result({
 }) {
   const delta = result.rating_after - result.rating_before
   const words = result.feedback.words ?? []
+  const { ai_enabled } = useConfig()
+  const coach = useCoach()
+  // Reading and Quant answers that were wrong can be talked through with the coach,
+  // which already sees this question and the answer given.
+  const canAsk = ai_enabled && !result.correct && !isBlankType(item.item_type)
 
   return (
     <Card>
@@ -428,7 +434,18 @@ function Result({
           </div>
         )}
 
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {canAsk && (
+            <Button
+              variant="outline"
+              className="mr-auto"
+              disabled={coach.busy}
+              onClick={() => coach.ask('Why is my answer wrong? Walk me through how to solve this one.')}
+            >
+              <MessageCircle />
+              Ask AI
+            </Button>
+          )}
           <Button onClick={onNext} autoFocus>
             Next
             <kbd className="font-sans text-xs opacity-60">Enter</kbd>
