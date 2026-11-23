@@ -2,6 +2,7 @@ import { Check } from 'lucide-react'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { LoadingCard } from '@/components/Status'
+import { ThemePicker } from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -95,6 +96,16 @@ export default function Settings() {
               <Button type="submit">Save</Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="font-semibold">Appearance</h2>
+            <p className="text-sm text-muted-foreground">System follows your device's light or dark setting.</p>
+          </div>
+          <ThemePicker />
         </CardContent>
       </Card>
 

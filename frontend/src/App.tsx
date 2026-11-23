@@ -3,9 +3,11 @@ import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Coach, CoachChat } from '@/components/Coach'
 import { TopLoader } from '@/components/Loading'
 import { ErrorAlert } from '@/components/Status'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import { cn } from '@/lib/utils'
 import { AccountButton, clerkEnabled } from './lib/auth'
 import { useConfig } from './lib/config'
+import { useApplyTheme } from './lib/theme'
 import Dashboard from './pages/Dashboard'
 import Placement from './pages/Placement'
 import Practice from './pages/Practice'
@@ -24,6 +26,7 @@ const NAV = [
 
 export default function App() {
   const config = useConfig()
+  useApplyTheme()
   // The study coach is a side chat (or its bubble) on every page, and can go full screen at /chat.
   const { pathname } = useLocation()
   const onChat = config.ai_enabled && pathname === '/chat'
@@ -63,7 +66,8 @@ export default function App() {
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex items-center">
+          <div className="ml-auto flex items-center gap-1">
+            <ThemeToggle />
             <AccountButton />
           </div>
         </div>
