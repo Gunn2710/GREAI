@@ -202,14 +202,10 @@ interface QuestionProps {
   onError: (m: string) => void
 }
 
-function Question(props: QuestionProps) {
-  return isBlankType(props.item.item_type) ? <BlankQuestion {...props} /> : <FormatQuestion {...props} />
-}
-
-/** Reading Comprehension and Quant (see components/PracticeFormats). */
-function FormatQuestion({ item, onAnswered, onError }: QuestionProps) {
+/** The hint and answering, shared by both question layouts: times the answer from
+ * when the question appeared, and sends it once (later clicks are ignored). */
+function useAnswering({ item, onAnswered, onError }: QuestionProps) {
   const shownAt = useRef(performance.now())
-  const [response, setResponse] = useState<PracticeResponse | null>(null)
   const [clue, setClue] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -217,8 +213,8 @@ function FormatQuestion({ item, onAnswered, onError }: QuestionProps) {
     setClue((await api.practiceHint(item.id)).clue)
   }
 
-  async function submit() {
-    if (!response || busy) return
+  async function submit(response: PracticeResponse) {
+    if (busy) return
     setBusy(true)
     try {
       onAnswered(await api.practiceAnswer(item.id, { ...response }, performance.now() - shownAt.current), response)
@@ -226,6 +222,20 @@ function FormatQuestion({ item, onAnswered, onError }: QuestionProps) {
       onError(e instanceof ApiError ? e.message : 'Could not submit your answer')
     }
   }
+
+  return { clue, busy, hint, submit }
+}
+
+function Question(props: QuestionProps) {
+  return isBlankType(props.item.item_type) ? <BlankQuestion {...props} /> : <FormatQuestion {...props} />
+}
+
+/** Reading Comprehension and Quant (see components/PracticeFormats). */
+function FormatQuestion(props: QuestionProps) {
+  const { item } = props
+  const [response, setResponse] = useState<PracticeResponse | null>(null)
+  const { clue, busy, hint, submit: send } = useAnswering(props)
+  const submit = () => response && send(response)
 
   return (
     <Card>
@@ -255,13 +265,12 @@ function Clue({ clue }: { clue: string }) {
 }
 
 /** Text Completion and Sentence Equivalence. */
-function BlankQuestion({ item, onAnswered, onError }: QuestionProps) {
-  const shownAt = useRef(performance.now())
+function BlankQuestion(props: QuestionProps) {
+  const { item } = props
   const isTc = item.item_type === 'tc'
   const blanks = item.payload.blanks ?? []
   const [selected, setSelected] = useState<(number | null)[]>(isTc ? blanks.map(() => null) : [])
-  const [clue, setClue] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const { clue, busy, hint, submit: send } = useAnswering(props)
 
   const complete = isTc ? selected.every((s) => s !== null) : selected.length === 2
   const fills = isTc
@@ -276,19 +285,7 @@ function BlankQuestion({ item, onAnswered, onError }: QuestionProps) {
     setSelected((s) => (s.includes(option) ? s.filter((x) => x !== option) : s.length < 2 ? [...s, option] : s))
   }
 
-  async function hint() {
-    setClue((await api.practiceHint(item.id)).clue)
-  }
-
-  async function submit() {
-    setBusy(true)
-    const response = { selected: selected as number[] }
-    try {
-      onAnswered(await api.practiceAnswer(item.id, response, performance.now() - shownAt.current), response)
-    } catch (e) {
-      onError(e instanceof ApiError ? e.message : 'Could not submit your answer')
-    }
-  }
+  const submit = () => send({ selected: selected as number[] })
 
   return (
     <Card>

@@ -153,9 +153,15 @@ class Attempt(Base):
     """Log of every answered item, for every section."""
 
     __tablename__ = "attempts"
+    # Most reads are one user's answers over a date range (dashboard, streak,
+    # check-ins); the coach also looks up the answer to the question on screen.
+    __table_args__ = (
+        Index("ix_attempts_user_id_created_at", "user_id", "created_at"),
+        Index("ix_attempts_item_id", "item_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[str] = mapped_column(String(64))
     item_id: Mapped[str] = mapped_column(String(36))
     section: Mapped[str] = mapped_column(String(16))
     item_type: Mapped[str] = mapped_column(String(32))
@@ -193,7 +199,7 @@ class CoachMessage(Base):
     user_id: Mapped[str] = mapped_column(String(64))
     role: Mapped[str] = mapped_column(String(16))  # "user" or "assistant"
     content: Mapped[str] = mapped_column(Text)
-    # A plan change the coach suggested with this reply (see coach.propose_plan).
+    # A plan change the coach suggested with this reply (see Tools.propose_plan in services/coach/tools.py).
     proposal: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # Other things it offered to do (each confirmed with a button) or noted down.
     actions: Mapped[list | None] = mapped_column(JSONB, nullable=True)

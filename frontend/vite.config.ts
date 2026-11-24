@@ -12,6 +12,20 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Libraries change far less often than the app, so they get their own
+        // files: after a deploy, returning visitors only download the app's code.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (/node_modules\/(@clerk)\//.test(id)) return 'clerk'
+          if (/node_modules\/(react|react-dom|scheduler|react-router|react-router-dom|@remix-run)\//.test(id))
+            return 'react'
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       // GRE_API_TARGET lets a second dev stack point at another backend port.

@@ -5,10 +5,9 @@ import { AppLoading } from '@/components/Loading'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { api, ApiError, setTokenProvider } from './api'
+import { clerkEnabled } from './clerk'
 
 /** Clerk is on when a publishable key is configured (VITE_CLERK_PUBLISHABLE_KEY in the root .env). */
-export const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined
-export const clerkEnabled = Boolean(CLERK_PUBLISHABLE_KEY)
 
 type Access = 'checking' | 'approved' | 'denied'
 

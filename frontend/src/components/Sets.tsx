@@ -1,7 +1,7 @@
 import { CircleCheck, Lock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { TIER_FILL } from './Comfort'
+import { TIER_FILL } from '../lib/comfort'
 import type { SetStatus, WordSet } from '../lib/types'
 
 /** Learned words in green, started-but-not-learned in grey, on one bar. */

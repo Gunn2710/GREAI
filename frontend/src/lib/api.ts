@@ -177,8 +177,8 @@ export const api = {
   practiceSummary: () => request<PracticeSummary>('/practice/summary'),
   placementLatest: () => request<{ result: PlacementResult | null }>('/placement/latest'),
   sets: () => request<SetsResponse>('/sets'),
-  words: (search?: string) =>
-    request<WordListEntry[]>(`/words${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  /** Every word with your progress on it (the Words page searches it in the browser). */
+  words: () => request<WordListEntry[]>('/words'),
   word: (id: number) =>
     request<{ word: WordDetail; card: CardSummary | null; my_sentence: string | null }>(`/words/${id}`),
   saveSentence: (id: number, sentence: string) =>

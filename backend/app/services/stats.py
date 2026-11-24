@@ -2,7 +2,7 @@
 from collections import Counter
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, select
 from sqlalchemy.orm import Session
 
 from app import engine_bridge as eb
@@ -18,15 +18,21 @@ def _as_utc(dt):
     return eb.from_days(eb.to_days(dt))
 
 
+def _utc_day(column):
+    """A timestamp column as its UTC calendar day, in SQL."""
+    return func.date(func.timezone("UTC", column))
+
+
 def _streak_days(db: Session, user_id: str) -> int:
-    days = {
-        _as_utc(dt).date()
-        for dt in db.scalars(
-            select(Attempt.created_at).where(
-                Attempt.user_id == user_id, Attempt.created_at >= utcnow() - timedelta(days=400)
-            )
+    # Only the distinct days come back, not every answer.
+    day = _utc_day(Attempt.created_at)
+    days = set(
+        db.scalars(
+            select(day)
+            .where(Attempt.user_id == user_id, Attempt.created_at >= utcnow() - timedelta(days=400))
+            .group_by(day)
         )
-    }
+    )
     today = utcnow().date()
     day = today if today in days else today - timedelta(days=1)
     streak = 0
@@ -43,7 +49,7 @@ def _activity(db: Session, user_id: str) -> dict:
     """Words studied on each day (UTC, like the streak), for the check-in grid. Only
     days with studying are listed."""
     today = utcnow().date()
-    day = func.date(func.timezone("UTC", Attempt.created_at))
+    day = _utc_day(Attempt.created_at)
     rows = db.execute(
         select(day, func.count(func.distinct(Attempt.word_id)))
         .where(
@@ -89,23 +95,28 @@ def dashboard(db: Session, user_id: str) -> dict:
             "due": sum(1 for c in cards if c.reps > 0 and start <= _as_utc(c.due) < end),
         })
 
-    since = now_dt - timedelta(days=30)
-    recent = list(db.scalars(
-        select(Attempt).where(
-            Attempt.user_id == user_id, Attempt.created_at >= since,
+    # Counted in SQL: a month of answers can be thousands of rows.
+    answered, right, reviews_today = db.execute(
+        select(
+            func.count(),
+            func.coalesce(func.sum(Attempt.correct.cast(Integer)), 0),
+            func.count().filter(Attempt.created_at >= start_of_today()),
+        ).where(
+            Attempt.user_id == user_id,
+            Attempt.created_at >= now_dt - timedelta(days=30),
             Attempt.item_type.in_(VOCAB_TYPES),
         )
-    ))
-    accuracy = round(sum(a.correct for a in recent) / len(recent), 3) if recent else None
-    reviews_today = sum(1 for a in recent if _as_utc(a.created_at) >= start_of_today())
+    ).one()
+    accuracy = round(right / answered, 3) if answered else None
 
     weakest = sorted(
         (x for x in summaries if x[0].reps > 0), key=lambda x: x[1]["comfort"]
     )[:5]
+    words = {w.id: w for w in db.scalars(select(Word).where(Word.id.in_([c.word_id for c, _ in weakest])))}
     new_left = max(0, min(new_word_limit(profile) - new_words_started_today(db, user_id),
                           total_words - len(cards)))
 
-    sets = word_sets(db, user_id)
+    sets = word_sets(db, user_id, summaries={c.word_id: (c, s) for c, s in summaries})
     return {
         "total_words": total_words,
         "sets": {
@@ -124,7 +135,7 @@ def dashboard(db: Session, user_id: str) -> dict:
         "forecast": forecast,
         "activity": _activity(db, user_id),
         "weakest": [
-            {"word": word_detail(db.get(Word, c.word_id)), "card": s} for c, s in weakest
+            {"word": word_detail(words[c.word_id]), "card": s} for c, s in weakest
         ],
     }
 
