@@ -6,7 +6,8 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ComfortMeter, DEPTH_LABEL, FREQUENCY_LABEL, FrequencyBadge, TierBadge, formatDue } from '../components/Comfort'
+import { ComfortMeter, FrequencyBadge, TierBadge } from '../components/Comfort'
+import { DEPTH_LABEL, formatDue, FREQUENCY_LABEL } from '../lib/comfort'
 import { SetTile } from '../components/Sets'
 import { api } from '../lib/api'
 import { downloadWordList } from '../lib/wordPdf'
@@ -25,14 +26,14 @@ export default function Words() {
     api.sets().then(setSets).catch(() => setSets(null))
   }, [])
 
+  // The whole list (about a thousand words) loads once; searching filters it here.
   useEffect(() => {
-    const t = setTimeout(() => {
-      api.words(search.trim() || undefined).then(setWords).catch(() => setWords([]))
-    }, 200)
-    return () => clearTimeout(t)
-  }, [search])
+    api.words().then(setWords).catch(() => setWords([]))
+  }, [])
 
-  const shown = words?.filter((w) => !selected || w.set === selected) ?? []
+  const query = search.trim().toLowerCase()
+  const matching = query ? (words ?? []).filter((w) => w.lemma.toLowerCase().includes(query)) : (words ?? [])
+  const shown = matching.filter((w) => !selected || w.set === selected)
   const selectedSet = sets?.sets.find((s) => s.number === selected)
   const select = (n: number | null) => {
     const opening = n !== null && n !== selected
@@ -45,9 +46,8 @@ export default function Words() {
     setDownloading(true)
     setDownloadError(null)
     try {
-      // The list may be narrowed by a search; the PDF always has the whole set.
-      const all = search.trim() || !words ? await api.words() : words
-      const inSet = all.filter((w) => w.set === set.number)
+      // The PDF always has the whole set, whatever the search.
+      const inSet = (words ?? (await api.words())).filter((w) => w.set === set.number)
       await downloadWordList(`Set ${set.number}`, `${setLabel(set)} · ${inSet.length} words`, inSet)
     } catch {
       setDownloadError('Could not make the PDF. Try again.')
@@ -70,7 +70,7 @@ export default function Words() {
             {selectedSet
               ? `${setLabel(selectedSet)} · ${selectedSet.size} words`
               : words
-                ? `${words.length} ${search.trim() ? 'matching words' : 'words'}`
+                ? `${matching.length} ${query ? 'matching words' : 'words'}`
                 : 'Loading…'}
           </CardDescription>
           <CardAction>

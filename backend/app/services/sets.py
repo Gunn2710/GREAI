@@ -27,9 +27,12 @@ def _grouped() -> frozenset[str]:
     return frozenset(lemma for group in load_groups() for lemma in group)
 
 
-def word_sets(db: Session, user_id: str) -> dict:
+def word_sets(db: Session, user_id: str, summaries: dict[int, tuple[Card, dict]] | None = None) -> dict:
+    """`summaries` (word id -> card and its card_summary) saves loading and scoring
+    the cards again when the caller already has them, like the dashboard."""
     now = eb.now_days()
-    cards = {c.word_id: c for c in db.scalars(select(Card).where(Card.user_id == user_id))}
+    if summaries is None:
+        summaries = {c.word_id: (c, None) for c in db.scalars(select(Card).where(Card.user_id == user_id))}
     sets: dict[int, dict] = defaultdict(lambda: {"size": 0, "started": 0, "learned": 0, "tier": 1, "source": "bank"})
     grouped = _grouped()
     for word_id, lemma, set_no, tier in db.execute(
@@ -40,10 +43,11 @@ def word_sets(db: Session, user_id: str) -> dict:
         s["tier"] = tier
         if lemma in grouped:
             s["source"] = "gregmat"
-        card = cards.get(word_id)
-        if card is not None:
+        entry = summaries.get(word_id)
+        if entry is not None:
+            card, summary = entry
             s["started"] += 1
-            if card.reps > 0 and eb.card_summary(card, now)["tier"] in LEARNED_TIERS:
+            if card.reps > 0 and (summary or eb.card_summary(card, now))["tier"] in LEARNED_TIERS:
                 s["learned"] += 1
 
     current = next((n for n in sorted(sets) if sets[n]["started"] < sets[n]["size"]), None)
