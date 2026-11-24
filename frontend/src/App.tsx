@@ -1,20 +1,40 @@
 import { GraduationCap } from 'lucide-react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Coach, CoachChat } from '@/components/Coach'
 import { TopLoader } from '@/components/Loading'
-import { ErrorAlert } from '@/components/Status'
+import { ErrorAlert, LoadingCard } from '@/components/Status'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { cn } from '@/lib/utils'
 import { AccountButton, clerkEnabled } from './lib/auth'
 import { useConfig } from './lib/config'
 import { useApplyTheme } from './lib/theme'
 import Dashboard from './pages/Dashboard'
-import Placement from './pages/Placement'
-import Practice from './pages/Practice'
-import Settings from './pages/Settings'
-import Study from './pages/Study'
-import WordPage from './pages/WordPage'
-import Words from './pages/Words'
+
+// The home page ships with the app; every other page is its own chunk, fetched
+// when first opened (or sooner: see preloadPages).
+const pages = {
+  study: () => import('./pages/Study'),
+  practice: () => import('./pages/Practice'),
+  words: () => import('./pages/Words'),
+  word: () => import('./pages/WordPage'),
+  settings: () => import('./pages/Settings'),
+  placement: () => import('./pages/Placement'),
+}
+const Study = lazy(pages.study)
+const Practice = lazy(pages.practice)
+const Words = lazy(pages.words)
+const WordPage = lazy(pages.word)
+const Settings = lazy(pages.settings)
+const Placement = lazy(pages.placement)
+
+/** Once the first page has loaded, fetch the others in the background so
+ * switching tabs doesn't wait on the network. */
+function preloadPages() {
+  const load = () => Object.values(pages).forEach((page) => page().catch(() => {}))
+  if ('requestIdleCallback' in window) window.requestIdleCallback(load, { timeout: 3000 })
+  else setTimeout(load, 1500)
+}
 
 const NAV = [
   { to: '/', label: 'Dashboard', end: true },
@@ -27,6 +47,7 @@ const NAV = [
 export default function App() {
   const config = useConfig()
   useApplyTheme()
+  useEffect(preloadPages, [])
   // The study coach is a side chat (or its bubble) on every page, and can go full screen at /chat.
   const { pathname } = useLocation()
   const onChat = config.ai_enabled && pathname === '/chat'
@@ -74,21 +95,23 @@ export default function App() {
       </header>
       <main className={cn('mx-auto flex max-w-4xl flex-col gap-4 px-4 pt-6', onChat ? 'pb-0' : 'pb-24')}>
         {mismatch && <ErrorAlert>{mismatch}</ErrorAlert>}
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/dashboard" element={<Navigate to="/" replace />} />
-          {/* The study coach full screen (from the side chat's full-screen button). */}
-          <Route
-            path="/chat"
-            element={config.ai_enabled ? <CoachChat variant="page" /> : config.loaded && <Navigate to="/" replace />}
-          />
-          <Route path="/study" element={<Study />} />
-          <Route path="/placement" element={<Placement />} />
-          <Route path="/practice" element={<Practice />} />
-          <Route path="/words" element={<Words />} />
-          <Route path="/words/:id" element={<WordPage />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
+        <Suspense fallback={<LoadingCard />}>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/dashboard" element={<Navigate to="/" replace />} />
+            {/* The study coach full screen (from the side chat's full-screen button). */}
+            <Route
+              path="/chat"
+              element={config.ai_enabled ? <CoachChat variant="page" /> : config.loaded && <Navigate to="/" replace />}
+            />
+            <Route path="/study" element={<Study />} />
+            <Route path="/placement" element={<Placement />} />
+            <Route path="/practice" element={<Practice />} />
+            <Route path="/words" element={<Words />} />
+            <Route path="/words/:id" element={<WordPage />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+        </Suspense>
       </main>
       <Coach />
     </div>
